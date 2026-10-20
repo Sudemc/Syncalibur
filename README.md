@@ -6,11 +6,11 @@
 
 **Autonomous Cross-Platform Git Auto-Sync Daemon**
 
-*Zero-friction background Git synchronization across Linux, macOS, and Windows — featuring a 2×2 subpixel TrueColor terminal emblem, multi-remote & identity auto-detection, automatic remote repository creation, pre-staging secret/size guards, and proactive failure terminal alerts.*
+*Zero-friction background Git synchronization across Linux, macOS, and Windows — featuring a 2×2 subpixel TrueColor terminal emblem, multi-remote & identity auto-detection, automatic remote repository creation, self-watching & upstream hot-reload auto-updater, pre-staging secret/size guards, and proactive failure terminal alerts.*
 
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-F5C242?style=for-the-badge)](#3-how-auto-start-works-across-operating-systems)
 [![Shell](https://img.shields.io/badge/Shell-Bash%203.2%2B-38BDF8?style=for-the-badge)](#)
-[![Auto-Repo](https://img.shields.io/badge/Auto--Repo-GitHub%20%26%20GitLab-34D399?style=for-the-badge)](#4-automatic-remote-repository-creation--identity-detection)
+[![Auto-Repo](https://img.shields.io/badge/Auto--Repo-GitHub%20%26%20GitLab-34D399?style=for-the-badge)](#4-automatic-remote-repository-creation--self-update-engine)
 [![Safety Shield](https://img.shields.io/badge/Shield-50%20MiB%20%26%20Secret%20Guard-F87171?style=for-the-badge)](#5-built-in-safety-shield--proactive-failure-alerts)
 
 </div>
@@ -21,13 +21,17 @@
 
 - **◈ 2×2 Subpixel TrueColor Terminal Emblem & Dashboard:** Renders the official Syncalibur PNG emblem directly inside your terminal (`status`, `logs`, `alert`, `install`, `run`) using 2×2 subpixel Unicode quadrant partitioning (`▘ ▝ ▀ ▖ ▌ ▞ ▛ ▗ ▚ ▐ ▜ ▄ ▙ ▟ █`) alongside a real-time telemetry panel and color-coded activity badges.
 - **🎯 Multi-Remote & Authorized Identity Detection:** Automatically inspects your Git configuration, SSH keys, and CLI credentials (`gh`, `glab`, tokens, SSH handshakes) to display every push destination (e.g. **GitHub** + **GitLab** dual-push) and your verified provider accounts (`@username`).
+- **🔄 Self-Watching & Automatic Upstream Hot-Reload (`sync_and_update_self_repo`):**
+  - Syncalibur automatically watches its own installation repository (`Syncalibur`) in the background!
+  - Local improvements you make inside Syncalibur are automatically committed and pushed (while `syncalibur.env` stays gitignored and never leaves your machine).
+  - Periodically fetches upstream updates (`every 120s`), pulls new releases (`git pull --rebase --autostash`), and **hot-reloads** the running daemon in-place (`exec`) without dropping a single cycle.
 - **✦ Zero-Friction Bootstrap & Auto-Remote Creation:**
-  - Works out of the box when cloned by any user: if a configured `SYNCALIBUR_REPO_PATH` does not exist on a new machine, Syncalibur safely falls back to the cloned directory instead of crashing.
+  - Ships with [`syncalibur.env.example`](syncalibur.env.example) and automatically creates your local gitignored `syncalibur.env` on first run.
   - If the watched folder is not a Git repository yet, Syncalibur initializes it automatically (`git init -b main`).
   - If the remote repository does not exist yet on **GitHub** or **GitLab** and your machine is authorized, Syncalibur creates the remote repository automatically and pushes.
-- **🚨 Proactive "Sync Failed" Terminal Popup & Desktop Notification:** If a background commit or push fails, Syncalibur automatically pops open a dedicated terminal window (`gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`, `alacritty`, macOS `Terminal.app`, Windows Git Bash) displaying a styled **SYNC FAILED — DIAGNOSTIC ALERT** screen with the exact error, root-cause hint, and one-line recovery commands (throttled via cooldown so retries never spam windows).
+- **🚨 Proactive "Sync Failed" Terminal Popup & Status View:** If a background commit, push, or self-update fails, Syncalibur automatically pops open a dedicated terminal window (`gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`, `alacritty`, macOS `Terminal.app`, Windows Git Bash) displaying the full **Syncalibur Status Dashboard + Diagnostic Report** with the exact error, root-cause hint, and one-key recovery (`[R]` retry / `[L]` live logs).
 - **🌍 Native Cross-Platform Auto-Start:** Registers a native background service (`systemd` / `cron` on Linux, `launchd` `LaunchAgents` on macOS, hidden Startup VBS launcher on Windows Git Bash) so it starts silently on every boot/login.
-- **🛡️ Pre-Staging Safety Shield:** Blocks oversized binaries (`> 50 MiB`, e.g. `.terraform/` providers) and sensitive secret files (`*.tfstate`, `.env`, `*.pem`, `*.key`, `id_rsa*`, `kubeconfig`) **before** `git add` so they never pollute `.git/objects` or break remote pushes.
+- **🛡️ Pre-Staging Safety Shield:** Blocks oversized binaries (`> 50 MiB`, e.g. `.terraform/` providers) and sensitive secret files (`syncalibur.env`, `*.tfstate`, `.env`, `*.pem`, `*.key`, `id_rsa*`, `kubeconfig`) **before** `git add` so they never pollute `.git/objects` or break remote pushes.
 
 ---
 
@@ -37,34 +41,27 @@
   <img src="assets/syncalibur-terminal.png" width="940" alt="Syncalibur Terminal Dashboard Preview" />
 </div>
 
-Running `./syncalibur.sh status` or `./syncalibur.sh logs` renders the 2×2 subpixel TrueColor Syncalibur emblem alongside your detected push targets and verified accounts:
+Running `./syncalibur.sh status` or `./syncalibur.sh logs` renders the 2×2 subpixel TrueColor Syncalibur emblem alongside your detected push targets, verified accounts, and self-updater state:
 
 ```text
   ╭──────────────────────────────────────────────────────────────────────╮
   │   S Y N C A L I B U R   •   Autonomous Git Auto-Sync Daemon          │
   ╰──────────────────────────────────────────────────────────────────────╯
-    ◈ Status    : ● ONLINE (PID 43994)
+    ◈ Status    : ● ONLINE (PID 46305)
     ◈ OS / Mode : Linux (systemd)  •  ✔ Enabled (syncalibur • systemd)
     ◈ Author    : YusufKaya00 <144667540+YusufKaya00@users.noreply.github.com> (ysf@Ysf)
     ◈ Verified  : ✔ GitHub: @YusufKaya00 (gh+SSH)  •  ✔ GitLab: @YusufKaya00 (SSH)
     ◈ Watching  : ~/k8sfundamentals (scope: .)
-    ◈ Config    : ~/Syncalibur/syncalibur.env
+    ◈ Config    : ~/Syncalibur/syncalibur.env (gitignored)
     ◈ Remote    : all (2 target(s) • branch 'main')
     ◈ Push #1   : GitHub → YusufKaya00/k8sfundamentals [main • SSH]
     ◈ Push #2   : GitLab → ysf-group1074641/Ysf-project [main • SSH]
-    ◈ Auto-Repo : ✔ Enabled (auto-creates missing remote as 'private') • Alert Popup ON
+    ◈ Self-Sync : ✔ Watching & Auto-Updating (~/Syncalibur @ main • every 120s)
+    ◈ Automation: ✔ Auto-Repo (private)  •  ✔ Failure Terminal Popup ON
     ◈ Sync State: ✔ 0 unpushed commits (in sync)
-    ◈ Timing    : Poll 3s • Debounce 5s (max 60s)
-    ◈ Shield    : ≤ 50 MiB • Secret & .tfstate guard active
+    ◈ Shield    : Poll 3s • Debounce 5s • ≤ 50 MiB & Secret Guard
     ──────────────────────────────────────────────────────────────────────
     Commands  : status | logs | alert | restart | stop | install | uninstall
-
-  Recent Activity
-  ────────────────────────────────────────────────────────────────────────────────────────
-  [11:12:46] ⟪◈ ONLINE   ⟫ 🚀 Syncalibur started. Repo: /home/ysf/k8sfundamentals (scope: .)
-  [11:12:46] ⟪◈ TELEMETRY⟫ 🎯 Targets: GitHub: YusufKaya00/k8sfundamentals, GitLab: ysf-group1074641/Ysf-project
-  [11:12:51] ⟪✔ COMMIT   ⟫ ✅ Committed 5 file(s): auto: README.md, syncalibur.sh (+3 more) (11:12:51)
-  [11:12:56] ⟪★ SYNCED   ⟫ 🎉 Push succeeded (GitHub: YusufKaya00/k8sfundamentals, GitLab: ysf-group1074641/Ysf-project).
 ```
 
 ---
@@ -81,7 +78,7 @@ chmod +x syncalibur.sh
 
 ### Step 2 — Install & point to any directory you want to auto-sync
 
-Pass the target directory path directly to `install` (or edit `SYNCALIBUR_REPO_PATH` in [`syncalibur.env`](syncalibur.env)):
+Pass the target directory path directly to `install` (this automatically creates your local, gitignored `syncalibur.env` from `syncalibur.env.example` so your personal path is never pushed):
 
 ```bash
 ./syncalibur.sh install /path/to/your/project
@@ -99,7 +96,7 @@ Pass the target directory path directly to `install` (or edit `SYNCALIBUR_REPO_P
 # Stream live colorized telemetry
 ./syncalibur.sh logs
 
-# Preview the "SYNC FAILED" diagnostic alert screen
+# Preview the full Status + "SYNC FAILED" diagnostic alert screen
 ./syncalibur.sh alert --test
 ```
 
@@ -109,8 +106,8 @@ Pass the target directory path directly to `install` (or edit `SYNCALIBUR_REPO_P
 
 ```text
 Syncalibur/
-├── syncalibur.sh               # Main daemon, 2x2 subpixel TUI, auto-repo & alert engine
-├── syncalibur.env              # Configuration file (set SYNCALIBUR_REPO_PATH here)
+├── syncalibur.sh               # Main daemon, 2x2 subpixel TUI, self-updater & alert engine
+├── syncalibur.env.example      # Public configuration template (copied to gitignored syncalibur.env)
 ├── assets/
 │   ├── syncalibur-logo.png     # Official Syncalibur emblem (512x512 RGBA)
 │   ├── syncalibur-logo.ansi    # Pre-rendered 2x2 subpixel TrueColor ANSI terminal emblem
@@ -131,23 +128,20 @@ Syncalibur/
 | **macOS** | `~/Library/LaunchAgents/com.syncalibur.syncalibur.plist` (`RunAtLoad` + `KeepAlive`) | Starts automatically at macOS login; `launchd` keeps it alive at all times |
 | **Windows (Git Bash / MSYS2)** | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\syncalibur.vbs` | Launches `syncalibur.sh` silently at Windows login with no console window popup |
 
-> [!NOTE]
-> **Watching Multiple Repositories:** You do not need to configure service names manually. For the default `syncalibur.env`, the service is named `syncalibur`. If you use a second config file (e.g. `SYNCALIBUR_CONFIG=~/work.env ./syncalibur.sh install`), Syncalibur automatically names that service `syncalibur-work`.
-
 ---
 
-## ✦ 4. Automatic Remote Repository Creation & Identity Detection
+## ✦ 4. Automatic Remote Repository Creation & Self-Update Engine
 
-When Syncalibur starts or pushes:
+When Syncalibur starts or runs in the background:
 
-1. **Identity & Provider Probing (`probe_provider_auth`):**
+1. **Self-Watching & Upstream Auto-Update (`sync_and_update_self_repo`):**
+   - Watches the `Syncalibur` directory itself for local code/doc improvements and auto-pushes them (excluding `syncalibur.env`).
+   - Checks `origin/main` every `SYNCALIBUR_SELF_CHECK_INTERVAL` seconds (`120s` default). Whenever you push an update to the Syncalibur repository from anywhere, running instances automatically `git pull --rebase --autostash` and hot-reload (`exec`) in the background!
+2. **Identity & Provider Probing (`probe_provider_auth`):**
    - **GitHub:** Checks `gh auth status`, `GH_TOKEN` / `GITHUB_TOKEN`, or `ssh -T git@github.com`.
    - **GitLab:** Checks `glab auth status`, `GITLAB_TOKEN`, or `ssh -T git@gitlab.com`.
-   - Results are cached in `.git/syncalibur.auth` (10-minute TTL) so `./syncalibur.sh status` stays instantaneous.
-2. **Multi-Target Push Detection (`parse_remote_url`):**
-   - Reads all push URLs from `git remote get-url --push --all <remote>` and lists each destination (`GitHub`, `GitLab`, `Bitbucket`, `Azure DevOps`) in the dashboard and push logs.
 3. **Automatic Remote Provisioning (`auto_create_or_bind_remote`):**
-   - If the local repository has no `origin` remote or the remote returns `Repository not found`, Syncalibur automatically creates the repository (default visibility: `private`, configurable via `SYNCALIBUR_REPO_VISIBILITY`) using `gh repo create`, `glab repo create`, REST API tokens, or GitLab's native SSH push-to-create.
+   - If the watched repository has no `origin` remote or the remote returns `Repository not found`, Syncalibur automatically creates the repository (`private` by default) via `gh`, `glab`, REST API tokens, or GitLab SSH push-to-create.
 
 ---
 
@@ -155,11 +149,12 @@ When Syncalibur starts or pushes:
 
 ```mermaid
 flowchart LR
+    S["Self-Watch & Auto-Update<br/>(Syncalibur repo fetch + hot-reload)"] --> A
     A["Poll every N sec<br/>(git status in scope)"] -->|Changes found| B["Debounce wait<br/>(until writes settle)"]
-    B --> C["Safety Shield<br/>(skip >50 MiB & secrets)"]
+    B --> C["Safety Shield<br/>(skip >50 MiB, secrets & syncalibur.env)"]
     C --> D["git add + commit<br/>auto: file1, file2 (+N more)"]
     D --> E["git push<br/>(auto-creates remote if missing)"]
-    E -->|Push / commit error| F["Pop open SYNC FAILED terminal<br/>+ Exponential backoff retry"]
+    E -->|Any error| F["Pop open Terminal with Status<br/>+ Diagnostic Alert & Backoff Retry"]
     F --> E
 ```
 
@@ -167,29 +162,24 @@ flowchart LR
 
 | Guard | Default Rule | Protected Examples |
 | --- | --- | --- |
+| **Personal Config Guard** | Never commits `syncalibur.env` | Your local watched path & tokens stay strictly on your machine |
 | **File Size Limit** | Skips files `> 50 MiB` (`SYNCALIBUR_MAX_FILE_SIZE_MB`) | `.terraform/providers/...`, VM images, archives, dumps |
 | **Sensitive Pattern Shield** | `*.tfstate` `*.tfstate.*` `*.tfvars` `.env` `.env.*` `*.pem` `*.key` `*.p12` `*.pfx` `id_rsa*` `id_ecdsa*` `id_ed25519*` `kubeconfig` `*.kubeconfig` `credentials.json` | Terraform state, `.env` secrets, SSH/TLS private keys, cloud credentials |
 
-### Automatic "Sync Failed" Terminal Popup
-
-When running in the background (`systemd`, `launchd`, `cron`, or Windows Startup) and a commit or push fails:
-- Syncalibur writes a structured diagnostic report to `.git/syncalibur.failure`.
-- Sends an OS desktop notification (`notify-send`, macOS Notification Center, or Windows alert).
-- Automatically opens a visible terminal window running `./syncalibur.sh alert --wait`, showing the Syncalibur emblem, the exact Git error, a tailored fix recommendation, and one-key log streaming.
-- Enforces `SYNCALIBUR_ALERT_COOLDOWN=600` (10 minutes) so background retries never spam multiple terminal windows, and automatically clears the alert state as soon as a subsequent push succeeds.
-
 ---
 
-## ⚙️ 6. Configuration Reference (`syncalibur.env`)
+## ⚙️ 6. Configuration Reference (`syncalibur.env.example` → `syncalibur.env`)
 
-All settings live in [`syncalibur.env`](syncalibur.env). After editing a value, apply it with `./syncalibur.sh restart`.
+On first run, Syncalibur copies [`syncalibur.env.example`](syncalibur.env.example) to `syncalibur.env` (which is gitignored). After editing a value, apply it with `./syncalibur.sh restart`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SYNCALIBUR_REPO_PATH` | `.` | Path to the directory / Git repo to watch. Supports Linux, macOS, Windows (`C:/...` or `C:\...`), `~`, and relative paths. Falls back safely to the containing repo if a path is missing on another machine. |
+| `SYNCALIBUR_REPO_PATH` | `.` | Path to the directory / Git repo to watch. Supports Linux, macOS, Windows (`C:/...` or `C:\...`), `~`, and relative paths. |
+| `SYNCALIBUR_SELF_AUTO_UPDATE` | `"true"` | Automatically watch Syncalibur's own repo, push local edits, pull upstream updates, and hot-reload in the background. |
+| `SYNCALIBUR_SELF_CHECK_INTERVAL` | `120` | Seconds between upstream update checks for Syncalibur's own repo. |
 | `SYNCALIBUR_AUTO_CREATE_REMOTE` | `"true"` | Automatically initialize Git (`git init`) and create missing remote repositories on GitHub/GitLab when authorized. |
 | `SYNCALIBUR_REPO_VISIBILITY` | `"private"` | Visibility when auto-creating a new remote repository (`"private"` or `"public"`). |
-| `SYNCALIBUR_ALERT_TERMINAL` | `"true"` | Automatically pop open a diagnostic terminal window & desktop notification if a background sync fails. |
+| `SYNCALIBUR_ALERT_TERMINAL` | `"true"` | Automatically pop open a terminal window showing full status + diagnostic alert if a sync or self-update fails. |
 | `SYNCALIBUR_ALERT_COOLDOWN` | `600` | Minimum seconds between automatic failure popup windows. |
 | `SYNCALIBUR_REMOTE` | `""` (`all` -> `origin`) | Remote name to push to. When empty, uses `all` if configured, otherwise `origin`. |
 | `SYNCALIBUR_POLL_INTERVAL` | `3` | Seconds between working-tree checks. |
@@ -215,5 +205,5 @@ All settings live in [`syncalibur.env`](syncalibur.env). After editing a value, 
 | `./syncalibur.sh restart` | Clear active alerts and restart Syncalibur (run after editing `syncalibur.env`) |
 | `./syncalibur.sh status` | Render the Syncalibur emblem, live dashboard, detected remotes, and recent logs |
 | `./syncalibur.sh logs` | Render the Syncalibur emblem and stream live colorized telemetry (`tail -f`) |
-| `./syncalibur.sh alert [--test]` | Show the "Sync Failed" diagnostic report (or preview it with `--test`) |
+| `./syncalibur.sh alert [--test]` | Show the full Status + "Sync Failed" diagnostic report (or preview with `--test`) |
 | `./syncalibur.sh run` | Run the daemon in the foreground with the live terminal UI |

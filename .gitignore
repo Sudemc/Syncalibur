@@ -1,4 +1,11 @@
-# Syncalibur runtime files
+# Personal configuration (never push personal paths or tokens)
+syncalibur.env
+.env
+.env.*
+!syncalibur.env.example
+!.env.example
+
+# Syncalibur runtime state files
 *.pid
 *.lock
 *.log
