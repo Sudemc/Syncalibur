@@ -98,6 +98,34 @@ func TestValidateFileSyntax(t *testing.T) {
 	if valid, _ := validateFileSyntax(tmpDir, "broken.sh"); valid {
 		t.Errorf("expected broken Bash script to fail syntax check")
 	}
+
+	// 7. Valid Java file
+	validJava := filepath.Join(tmpDir, "App.java")
+	_ = os.WriteFile(validJava, []byte("public class App { public static void main(String[] args) { System.out.println(\"ok\"); } }"), 0644)
+	if valid, errReason := validateFileSyntax(tmpDir, "App.java"); !valid {
+		t.Errorf("expected valid Java file to pass, got: %s", errReason)
+	}
+
+	// 8. Broken Java file (missing closing brace)
+	brokenJava := filepath.Join(tmpDir, "BrokenApp.java")
+	_ = os.WriteFile(brokenJava, []byte("public class BrokenApp { public static void main(String[] args) {"), 0644)
+	if valid, _ := validateFileSyntax(tmpDir, "BrokenApp.java"); valid {
+		t.Errorf("expected broken Java file to fail syntax check")
+	}
+
+	// 9. Valid React TSX
+	validTSX := filepath.Join(tmpDir, "Component.tsx")
+	_ = os.WriteFile(validTSX, []byte("export const Header = () => { return <div><h1>Title</h1></div>; };"), 0644)
+	if valid, errReason := validateFileSyntax(tmpDir, "Component.tsx"); !valid {
+		t.Errorf("expected valid React TSX to pass, got: %s", errReason)
+	}
+
+	// 10. Broken React TSX (unclosed JSX expression brace)
+	brokenTSX := filepath.Join(tmpDir, "BrokenComponent.tsx")
+	_ = os.WriteFile(brokenTSX, []byte("export const Header = () => { return <div>{items.map(i => <span>{i}</span>); };"), 0644)
+	if valid, _ := validateFileSyntax(tmpDir, "BrokenComponent.tsx"); valid {
+		t.Errorf("expected broken React TSX to fail syntax check")
+	}
 }
 
 func TestInspectGoAST(t *testing.T) {
