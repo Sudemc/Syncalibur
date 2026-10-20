@@ -1418,7 +1418,51 @@ func loadLogLines(logPath string, maxLines int) []string {
 	return clean
 }
 
+var emojiToLucideReplacer = strings.NewReplacer(
+	"🎉", "✓",
+	"🚀", "●",
+	"🛑", "○",
+	"⏸️", "▲",
+	"⏸", "▲",
+	"🔄", "⇄",
+	"🔀", "⇄",
+	"📤", "↗",
+	"📥", "↙",
+	"📝", "✦",
+	"✨", "✦",
+	"⚡", "✦",
+	"🔍", "◇",
+	"🎯", "◆",
+	"👤", "◆",
+	"⏱️", "◆",
+	"⏱", "◆",
+	"📋", "•",
+	"🖥️", "•",
+	"🖥", "•",
+	"⚠️", "▲",
+	"❌", "✕",
+	"✅", "✓",
+	"🚫", "▲",
+	"🔁", "↻",
+	"🛡️", "⛨",
+	"🛡", "⛨",
+	"⚙️", "✦",
+	"⚙", "✦",
+	"⚔️", "✦",
+	"⚔", "✦",
+	"ℹ️", "ℹ",
+	"ℹ", "ℹ",
+	"✔", "✓",
+	"✖", "✕",
+	"📡", "✦",
+	"⏳", "▲",
+	"★", "✓",
+	"\ufe0f", "",
+)
+
 func formatLogLineForTUI(raw string, maxCols int) string {
+	raw = emojiToLucideReplacer.Replace(raw)
+
 	// Format log line with Lucide minimalist icons
 	if strings.Contains(raw, "[SYNTAX HOLD]") {
 		raw = fmt.Sprintf("%s%s %s%s", cAmber, iconWarn, raw, cReset)
