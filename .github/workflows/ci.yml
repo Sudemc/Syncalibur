@@ -1,0 +1,53 @@
+name: Syncalibur CI
+
+on:
+  pull_request:
+    branches: [ "main", "master" ]
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Go Engine & Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Verify Bash Syntax (syncalibur.sh & install.sh)
+        run: |
+          bash -n syncalibur.sh
+          bash -n install.sh
+
+      - name: ShellCheck Static Analysis
+        run: |
+          shellcheck -S error syncalibur.sh install.sh
+
+      - name: Go Vet & Build Native Engine
+        run: |
+          go vet ./cmd/syncalibur-engine
+          mkdir -p bin
+          go build -trimpath -ldflags="-s -w" -o bin/syncalibur-engine ./cmd/syncalibur-engine/main.go
+
+      - name: Smoke Test Engine Subcommands & Security Hygiene
+        run: |
+          ./bin/syncalibur-engine render-logo assets/syncalibur-logo.png 20 > /dev/null
+          ./bin/syncalibur-engine sparkline . > /dev/null
+          if git ls-files --error-unmatch syncalibur.env >/dev/null 2>&1; then
+            echo "ERROR: Personal syncalibur.env must never be tracked in Git!"
+            exit 1
+          fi
+          if git ls-files --error-unmatch repos.list >/dev/null 2>&1; then
+            echo "ERROR: Personal repos.list must never be tracked in Git!"
+            exit 1
+          fi
+          echo "All CI verification checks passed!"
