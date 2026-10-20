@@ -1105,7 +1105,7 @@ cmd_notify() {
     return 1
   fi
 
-  printf '  %s📡 Dispatching notification for %s (%s)...%s\n' "${C_CYAN}" "${repo_name}" "${branch_name}" "${C_RESET}"
+  printf '  %s✦ Dispatching notification for %s (%s)...%s\n' "${C_CYAN}" "${repo_name}" "${branch_name}" "${C_RESET}"
   if send_webhook_notification "test" "Syncalibur Notification (${repo_name})" "${custom_msg}" "Triggered via: syncalibur notify" "sync"; then
     printf '  %s✓ Notification delivered successfully!%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
     return 0
@@ -1779,7 +1779,7 @@ wait_for_quiet() {
     [[ "${current}" == "${previous}" ]] && return 0
     previous="${current}"
   done
-  log "⏳ Files still changing after ${MAX_DEBOUNCE}s; committing anyway."
+  log "▲ Files still changing after ${MAX_DEBOUNCE}s; committing anyway."
 }
 
 changed_paths() {
@@ -2005,7 +2005,7 @@ push_changes() {
       if (( rc == 0 )); then
         clear_sync_failure
         log "✓ Push succeeded after auto-creating remote repository (${targets_desc})."
-        send_webhook_notification "success" "★ Syncalibur Created Remote & Pushed ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Target: ${targets_desc} (${branch})"
+        send_webhook_notification "success" "✓ Syncalibur Created Remote & Pushed ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Target: ${targets_desc} (${branch})"
         return 0
       fi
     fi
@@ -2842,7 +2842,7 @@ case "${1:-}" in
   pull)       cd "${REPO_ROOT}" && safe_bidirectional_sync "$(get_remote)" "$(get_branch || echo main)" 1 ;;
   sync)       touch "${SYNC_TRIGGER_FILE}" && echo "✦ Triggered immediate sync cycle." ;;
   pause)      touch "${PAUSE_FILE}" && echo "▲  Syncalibur paused. Run 'syncalibur resume' to continue." ;;
-  resume)     rm -f "${PAUSE_FILE}" && echo "▶️  Syncalibur resumed." ;;
+  resume)     rm -f "${PAUSE_FILE}" && echo "▶  Syncalibur resumed." ;;
   alert)      cmd_alert "${2:-}" ;;
   run)        run_daemon ;;
   *)          usage; exit 1 ;;

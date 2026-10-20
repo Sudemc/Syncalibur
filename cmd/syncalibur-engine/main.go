@@ -62,7 +62,7 @@ const (
 	iconCross   = "✕"
 	iconWarn    = "▲"
 	iconShield  = "⛨"
-	iconZap     = "⚡"
+	iconZap     = "✦"
 	iconSparkle = "✦"
 	iconArrowUp = "↗"
 	iconArrowDn = "↙"
@@ -72,7 +72,7 @@ const (
 	iconChevron = "›"
 	iconSync    = "⇄"
 	iconDoctor  = "✚"
-	iconPause   = "⏸"
+	iconPause   = "▲"
 	iconPlay    = "▶"
 )
 
