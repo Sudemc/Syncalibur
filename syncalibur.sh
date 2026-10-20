@@ -1456,7 +1456,17 @@ EOF
 
 cmd_pr() {
   cd "${REPO_ROOT}" || return 1
-  local base_branch="${1:-main}"
+  local dry_run=0 base_branch="main"
+  if [[ "${1:-}" == "--dry-run" || "${1:-}" == "--preview" ]]; then
+    dry_run=1
+    base_branch="${2:-main}"
+  elif [[ -n "${1:-}" ]]; then
+    base_branch="$1"
+    if [[ "${2:-}" == "--dry-run" || "${2:-}" == "--preview" ]]; then
+      dry_run=1
+    fi
+  fi
+
   local cur_branch pr_branch pr_title pr_body pr_url
   cur_branch="$(get_branch || echo main)"
   pr_title="$(git log -1 --pretty=%s 2>/dev/null || echo "feat: automated Syncalibur update")"
@@ -1469,7 +1479,7 @@ cmd_pr() {
 
   pr_body="$(render_auto_pr_body "${REPO_ROOT}" "${base_branch}" "${pr_branch}" "${pr_title}" "Manual / CLI Pull Request (\`syncalibur pr\`)")"
 
-  if [[ "${1:-}" == "--dry-run" || "${1:-}" == "--preview" ]]; then
+  if (( dry_run )); then
     printf '%s\n' "${pr_body}"
     return 0
   fi
