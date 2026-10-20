@@ -1,0 +1,12 @@
+# ==============================================================================
+# Syncalibur Multi-Repository Fleet List (repos.list.example)
+# ==============================================================================
+# Copy this file to `repos.list` (gitignored) or manage it via CLI:
+#   syncalibur fleet add ~/projects/my-app
+#   syncalibur fleet scan ~/projects
+#   syncalibur fleet status
+#   syncalibur fleet start
+# ==============================================================================
+
+# /home/username/projects/repo-one
+# /home/username/projects/repo-two
