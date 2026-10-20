@@ -39,7 +39,6 @@ import (
 	"syscall"
 	"time"
 	"unicode"
-	"unsafe"
 )
 
 // ANSI Color Palette (24-bit TrueColor & 16-color Fallback)
@@ -1272,8 +1271,23 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 			return false, fmt.Sprintf("%s: %s", relPath, reason)
 		}
 	case ".sh", ".bash":
-		if _, err := exec.LookPath("bash"); err == nil {
-			cmd := exec.Command("bash", "-n", absPath)
+		bashBin := ""
+		if p, err := exec.LookPath("bash"); err == nil {
+			bashBin = p
+		} else if runtime.GOOS == "windows" {
+			for _, candidate := range []string{
+				`C:\Program Files\Git\bin\bash.exe`,
+				`C:\Program Files\Git\usr\bin\bash.exe`,
+				`C:\Git\bin\bash.exe`,
+			} {
+				if _, err := os.Stat(candidate); err == nil {
+					bashBin = candidate
+					break
+				}
+			}
+		}
+		if bashBin != "" {
+			cmd := exec.Command(bashBin, "-n", absPath)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				errMsg := strings.TrimSpace(string(out))
 				if errMsg == "" {
@@ -1976,44 +1990,12 @@ func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, de
 // 7. Two-Pane Interactive Live TUI with Scrollable Logs (`syncalibur ui`)
 // ==============================================================================
 
-type winsize struct {
-	Row    uint16
-	Col    uint16
-	Xpixel uint16
-	Ypixel uint16
-}
-
-func getTerminalSize() (int, int) {
-	ws := &winsize{}
-	retCode, _, _ := syscall.Syscall(syscall.SYS_IOCTL,
-		uintptr(syscall.Stdin),
-		uintptr(syscall.TIOCGWINSZ),
-		uintptr(unsafe.Pointer(ws)))
-	if int(retCode) >= 0 && ws.Row > 0 && ws.Col > 0 {
-		return int(ws.Row), int(ws.Col)
-	}
-
-	cmd := exec.Command("stty", "size")
-	cmd.Stdin = os.Stdin
-	if out, err := cmd.Output(); err == nil {
-		parts := strings.Fields(strings.TrimSpace(string(out)))
-		if len(parts) >= 2 {
-			r, err1 := strconv.Atoi(parts[0])
-			c, err2 := strconv.Atoi(parts[1])
-			if err1 == nil && err2 == nil && r > 0 && c > 0 {
-				return r, c
-			}
-		}
-	}
-	return 24, 80
-}
-
 func getDaemonStatus(gitDir string) (bool, int) {
 	pidBytes, err := os.ReadFile(filepath.Join(gitDir, "syncalibur.pid"))
 	if err == nil {
 		pidStr := strings.TrimSpace(string(pidBytes))
 		if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
-			if syscall.Kill(pid, 0) == nil {
+			if isProcessAlive(pid) {
 				return true, pid
 			}
 		}
