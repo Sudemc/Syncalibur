@@ -195,13 +195,13 @@ load_config() {
     line="${line%$'\r'}"
     [[ "${line}" =~ ^[[:space:]]*(#|$) ]] && continue
     if ! [[ "${line}" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Z_][A-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      echo "⚠️  ${file}:${n}: ignoring malformed line: ${line}" >&2
+      echo "▲  ${file}:${n}: ignoring malformed line: ${line}" >&2
       continue
     fi
     key="${BASH_REMATCH[2]}"
     value="${BASH_REMATCH[3]}"
     if [[ "${CONFIG_KEYS}" != *[[:space:]]"${key}"[[:space:]]* ]]; then
-      echo "⚠️  ${file}:${n}: unknown key '${key}' (ignored)" >&2
+      echo "▲  ${file}:${n}: unknown key '${key}' (ignored)" >&2
       continue
     fi
     if [[ "${value}" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ || "${value}" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
@@ -271,7 +271,7 @@ if [[ "${1:-}" == "install" && -n "${2:-}" ]]; then
   INSTALL_ARG_PATH="$(normalize_path_input "${2}")"
   mkdir -p "${INSTALL_ARG_PATH}" 2>/dev/null || true
   if [[ ! -d "${INSTALL_ARG_PATH}" ]]; then
-    echo "❌ Specified directory does not exist and could not be created: ${2}" >&2
+    echo "✕ Specified directory does not exist and could not be created: ${2}" >&2
     exit 1
   fi
   INSTALL_ARG_PATH="$(resolve_path "${INSTALL_ARG_PATH}")"
@@ -285,7 +285,7 @@ elif [[ -f "${EXAMPLE_ENV_FILE}" ]]; then
   CONFIG_FILE="$(resolve_path "${EXAMPLE_ENV_FILE}")"
   load_config "${CONFIG_FILE}"
 elif [[ -n "${SYNCALIBUR_CONFIG:-${AUTO_SYNC_CONFIG:-}}" ]]; then
-  echo "❌ Config file not found: ${CONFIG_FILE}" >&2
+  echo "✕ Config file not found: ${CONFIG_FILE}" >&2
   exit 1
 else
   CONFIG_FILE=""
@@ -336,7 +336,7 @@ if [[ -n "${WATCH_PATH}" ]]; then
   [[ "${WATCH_PATH}" == /* ]] || WATCH_PATH="$(dirname "${CONFIG_FILE:-${SCRIPT_PATH}}")/${WATCH_PATH}"
   if [[ ! -d "${WATCH_PATH}" ]]; then
     FALLBACK_WATCH_PATH="$(resolve_default_watch_fallback)"
-    echo "⚠️  Configured SYNCALIBUR_REPO_PATH ('${WATCH_PATH}') not found on this machine; automatically using '${FALLBACK_WATCH_PATH}'." >&2
+    echo "▲  Configured SYNCALIBUR_REPO_PATH ('${WATCH_PATH}') not found on this machine; automatically using '${FALLBACK_WATCH_PATH}'." >&2
     WATCH_PATH="${FALLBACK_WATCH_PATH}"
   fi
 else
@@ -346,14 +346,14 @@ WATCH_PATH="$(resolve_path "${WATCH_PATH}")"
 
 if ! REPO_ROOT="$(git -C "${WATCH_PATH}" rev-parse --show-toplevel 2>/dev/null)"; then
   if [[ "${AUTO_CREATE_REMOTE}" == "true" || "${1:-}" == "install" ]]; then
-    echo "⚙️  '${WATCH_PATH}' is not a git repository yet; initializing with 'git init -b main'..."
+    echo "✦  '${WATCH_PATH}' is not a git repository yet; initializing with 'git init -b main'..."
     git -C "${WATCH_PATH}" init -b main >/dev/null 2>&1 || {
       git -C "${WATCH_PATH}" init >/dev/null 2>&1
       git -C "${WATCH_PATH}" symbolic-ref HEAD refs/heads/main 2>/dev/null || true
     }
     REPO_ROOT="${WATCH_PATH}"
   else
-    echo "❌ '${WATCH_PATH}' is not inside a git repository." >&2
+    echo "✕ '${WATCH_PATH}' is not inside a git repository." >&2
     exit 1
   fi
 fi
@@ -421,12 +421,12 @@ read -r -a SENSITIVE_PATTERNS <<< "${EFFECTIVE_SENSITIVE}"
 
 for var in POLL_INTERVAL DEBOUNCE_WAIT MAX_DEBOUNCE MAX_FILE_SIZE_MB RETRY_BASE RETRY_MAX PUSH_TIMEOUT LOG_MAX_KB; do
   if ! [[ "${!var}" =~ ^[0-9]+$ ]]; then
-    echo "❌ ${var} must be a non-negative integer (got '${!var}')." >&2
+    echo "✕ ${var} must be a non-negative integer (got '${!var}')." >&2
     exit 1
   fi
 done
 if (( POLL_INTERVAL < 1 || DEBOUNCE_WAIT < 1 || RETRY_BASE < 1 )); then
-  echo "❌ POLL_INTERVAL, DEBOUNCE_WAIT and RETRY_BASE must be at least 1 second." >&2
+  echo "✕ POLL_INTERVAL, DEBOUNCE_WAIT and RETRY_BASE must be at least 1 second." >&2
   exit 1
 fi
 MAX_FILE_BYTES=$(( MAX_FILE_SIZE_MB * 1024 * 1024 ))
@@ -663,16 +663,16 @@ auto_create_or_bind_remote() {
     local slug="${target_slug:-${gh_user}/${repo_name}}"
     local name_only="${slug#*/}"
     if command -v gh >/dev/null 2>&1 && [[ -n "${gh_user}" ]]; then
-      log "✨ Creating ${REPO_VISIBILITY} GitHub repository '${slug}' via GitHub CLI..."
+      log "✦ Creating ${REPO_VISIBILITY} GitHub repository '${slug}' via GitHub CLI..."
       if gh repo view "${slug}" >/dev/null 2>&1 || gh repo create "${slug}" "--${REPO_VISIBILITY}" >/dev/null 2>&1; then
         if ! git -C "${REPO_ROOT}" remote get-url origin >/dev/null 2>&1; then
           git -C "${REPO_ROOT}" remote add origin "git@github.com:${slug}.git" 2>/dev/null || true
         fi
-        log "✅ GitHub repository ready: git@github.com:${slug}.git"
+        log "✓ GitHub repository ready: git@github.com:${slug}.git"
         return 0
       fi
     elif [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]] && command -v curl >/dev/null 2>&1; then
-      log "✨ Creating ${REPO_VISIBILITY} GitHub repository '${slug}' via GitHub API..."
+      log "✦ Creating ${REPO_VISIBILITY} GitHub repository '${slug}' via GitHub API..."
       if curl -fsSL -m 10 -X POST \
         -H "Authorization: token ${GH_TOKEN:-${GITHUB_TOKEN}}" \
         -H "Accept: application/vnd.github+json" \
@@ -681,7 +681,7 @@ auto_create_or_bind_remote() {
         if ! git -C "${REPO_ROOT}" remote get-url origin >/dev/null 2>&1; then
           git -C "${REPO_ROOT}" remote add origin "git@github.com:${slug}.git" 2>/dev/null || true
         fi
-        log "✅ GitHub repository ready: git@github.com:${slug}.git"
+        log "✓ GitHub repository ready: git@github.com:${slug}.git"
         return 0
       fi
     fi
@@ -691,17 +691,17 @@ auto_create_or_bind_remote() {
     local slug="${target_slug:-${gl_user}/${repo_name}}"
     local name_only="${slug#*/}"
     if command -v glab >/dev/null 2>&1 && [[ -n "${gl_user}" ]]; then
-      log "✨ Creating ${REPO_VISIBILITY} GitLab project '${slug}' via GitLab CLI..."
+      log "✦ Creating ${REPO_VISIBILITY} GitLab project '${slug}' via GitLab CLI..."
       glab repo create "${slug}" "--${REPO_VISIBILITY}" >/dev/null 2>&1 || true
     elif [[ -n "${GITLAB_TOKEN:-}" ]] && command -v curl >/dev/null 2>&1; then
-      log "✨ Creating ${REPO_VISIBILITY} GitLab project '${slug}' via GitLab API..."
+      log "✦ Creating ${REPO_VISIBILITY} GitLab project '${slug}' via GitLab API..."
       curl -fsSL -m 10 -X POST \
         --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
         "https://gitlab.com/api/v4/projects?name=${name_only}&visibility=${REPO_VISIBILITY}" >/dev/null 2>&1 || true
     fi
     if [[ -n "${gl_user}" ]] && ! git -C "${REPO_ROOT}" remote get-url origin >/dev/null 2>&1; then
       git -C "${REPO_ROOT}" remote add origin "git@gitlab.com:${slug}.git" 2>/dev/null || true
-      log "✅ Bound remote 'origin' -> git@gitlab.com:${slug}.git (GitLab push-to-create ready)"
+      log "✓ Bound remote 'origin' -> git@gitlab.com:${slug}.git (GitLab push-to-create ready)"
       return 0
     fi
   fi
@@ -837,7 +837,7 @@ format_log_line() {
       *"Retrying"*)
         badge_color="${C_AMBER}"; badge_text="⟳ RETRY    "; msg_color="${C_AMBER}" ;;
       *"paused"*)
-        badge_color="${C_AMBER}"; badge_text="⏸ PAUSED   "; msg_color="${C_AMBER}" ;;
+        badge_color="${C_AMBER}"; badge_text="▲ PAUSED   "; msg_color="${C_AMBER}" ;;
       *"stopped"*|*"durduruldu"*)
         badge_color="${C_RED}"; badge_text="■ STOPPED  "; msg_color="${C_SLATE}" ;;
     esac
@@ -854,25 +854,25 @@ format_log_line() {
 describe_notify_channels() {
   local -a ch=()
   if [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
-    ch+=("${C_CYAN}✔ Telegram Bot${C_RESET}")
+    ch+=("${C_CYAN}✓ Telegram Bot${C_RESET}")
   fi
   if [[ -n "${WEBHOOK_URL}" ]]; then
     local lurl="${WEBHOOK_URL,,}"
     if [[ "${lurl}" == *"discord"* ]]; then
-      ch+=("${C_CYAN}✔ Discord Webhook${C_RESET}")
+      ch+=("${C_CYAN}✓ Discord Webhook${C_RESET}")
     elif [[ "${lurl}" == *"slack.com"* ]]; then
-      ch+=("${C_CYAN}✔ Slack Webhook${C_RESET}")
+      ch+=("${C_CYAN}✓ Slack Webhook${C_RESET}")
     elif [[ "${lurl}" == *"api.telegram.org"* ]]; then
-      ch+=("${C_CYAN}✔ Telegram Webhook${C_RESET}")
+      ch+=("${C_CYAN}✓ Telegram Webhook${C_RESET}")
     else
-      ch+=("${C_CYAN}✔ Custom Webhook${C_RESET}")
+      ch+=("${C_CYAN}✓ Custom Webhook${C_RESET}")
     fi
   fi
   if (( ${#ch[@]} == 0 )); then
-    printf '%s' "${C_CYAN}✔ Alert Popup${C_RESET}"
+    printf '%s' "${C_CYAN}✓ Alert Popup${C_RESET}"
   else
     local IFS=" ${C_SLATE}•${C_RESET} "
-    printf '%s' "${ch[*]} ${C_SLATE}•${C_RESET} ${C_CYAN}✔ Alert Popup${C_RESET}"
+    printf '%s' "${ch[*]} ${C_SLATE}•${C_RESET} ${C_CYAN}✓ Alert Popup${C_RESET}"
   fi
 }
 
@@ -897,7 +897,7 @@ print_syncalibur_dashboard() {
 
   local pid state_str autostart_str branch remote unpushed_str cfg_short watch_short self_str engine_badge res_badge=""
   if [[ -f "${PAUSE_FILE}" ]]; then
-    state_str="${C_AMBER}${C_BOLD}⏸ PAUSED${C_RESET} ${C_SLATE}(resume via 'syncalibur resume' or [p] in UI)${C_RESET}"
+    state_str="${C_AMBER}${C_BOLD}▲ PAUSED${C_RESET} ${C_SLATE}(resume via 'syncalibur resume' or [p] in UI)${C_RESET}"
   elif pid="$(daemon_pid)"; then
     res_badge="$(daemon_resource_badge "${pid}")"
     state_str="${C_GREEN}${C_BOLD}● ONLINE${C_RESET} ${C_SLATE}(PID ${pid})${C_RESET} ${res_badge}"
@@ -906,7 +906,7 @@ print_syncalibur_dashboard() {
   fi
 
   if is_service_installed; then
-    autostart_str="${C_GREEN}✔ Enabled${C_RESET} ${C_SLATE}(${SERVICE_NAME} • ${SERVICE_BACKEND})${C_RESET}"
+    autostart_str="${C_GREEN}✓ Enabled${C_RESET} ${C_SLATE}(${SERVICE_NAME} • ${SERVICE_BACKEND})${C_RESET}"
   else
     autostart_str="${C_AMBER}○ Not installed${C_RESET} ${C_SLATE}(${SERVICE_BACKEND})${C_RESET}"
   fi
@@ -922,17 +922,17 @@ print_syncalibur_dashboard() {
   if [[ -f "${FAIL_REPORT_FILE}" ]]; then
     local fail_reason_short
     fail_reason_short="$(sed -n '4p' "${FAIL_REPORT_FILE}" 2>/dev/null | cut -c1-48)"
-    unpushed_str="${C_RED}${C_BOLD}✖ SYNC FAILED:${C_RESET} ${C_RED}${fail_reason_short:-see syncalibur alert}${C_RESET}"
+    unpushed_str="${C_RED}${C_BOLD}✕ SYNC FAILED:${C_RESET} ${C_RED}${fail_reason_short:-see syncalibur alert}${C_RESET}"
   elif [[ "${branch}" != "detached" ]]; then
     local up_cnt
     up_cnt="$(cd "${REPO_ROOT}" && unpushed_count "${remote}" "${branch}")"
     if (( up_cnt == 0 )); then
-      unpushed_str="${C_GREEN}✔ 0 unpushed commits (in sync)${C_RESET}  ${C_SLATE}•${C_RESET}  $(render_sparkline)"
+      unpushed_str="${C_GREEN}✓ 0 unpushed commits (in sync)${C_RESET}  ${C_SLATE}•${C_RESET}  $(render_sparkline)"
     else
       unpushed_str="${C_AMBER}● ${up_cnt} commit(s) queued${C_RESET}  ${C_SLATE}•${C_RESET}  $(render_sparkline)"
     fi
   else
-    unpushed_str="${C_AMBER}⏸ Detached HEAD (paused)${C_RESET}"
+    unpushed_str="${C_AMBER}▲ Detached HEAD (paused)${C_RESET}"
   fi
 
   local id_raw git_user git_email sys_ident ssh_cred gh_user gh_via gl_user gl_via
@@ -941,11 +941,11 @@ print_syncalibur_dashboard() {
 
   local auth_badges=""
   if [[ -n "${gh_user}" ]]; then
-    auth_badges="${C_GREEN}✔ GitHub: @${gh_user}${C_RESET} ${C_SLATE}(${gh_via})${C_RESET}"
+    auth_badges="${C_GREEN}✓ GitHub: @${gh_user}${C_RESET} ${C_SLATE}(${gh_via})${C_RESET}"
   fi
   if [[ -n "${gl_user}" ]]; then
     [[ -n "${auth_badges}" ]] && auth_badges="${auth_badges}  ${C_SLATE}•${C_RESET}  "
-    auth_badges="${auth_badges}${C_GREEN}✔ GitLab: @${gl_user}${C_RESET} ${C_SLATE}(${gl_via})${C_RESET}"
+    auth_badges="${auth_badges}${C_GREEN}✓ GitLab: @${gl_user}${C_RESET} ${C_SLATE}(${gl_via})${C_RESET}"
   fi
   [[ -z "${auth_badges}" ]] && auth_badges="${C_AMBER}SSH key (${ssh_cred})${C_RESET}"
 
@@ -970,14 +970,14 @@ print_syncalibur_dashboard() {
     local self_rev self_short
     self_rev="$(git -C "${SELF_REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo main)"
     self_short="${SELF_REPO_ROOT/#${HOME}/~}"
-    self_str="${C_GREEN}✔ Watching & Auto-Updating${C_RESET} ${C_SLATE}(${self_short} @ ${self_rev} • every ${SELF_CHECK_INTERVAL}s)${C_RESET}"
+    self_str="${C_GREEN}✓ Watching & Auto-Updating${C_RESET} ${C_SLATE}(${self_short} @ ${self_rev} • every ${SELF_CHECK_INTERVAL}s)${C_RESET}"
   else
     self_str="${C_SLATE}Disabled${C_RESET}"
   fi
 
   local notify_str
   notify_str="$(describe_notify_channels)"
-  local autorepo_str="${C_GREEN}✔ Bi-Sync${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✔ Semantic Commits${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✔ Auto-Repo (${REPO_VISIBILITY})${C_RESET} ${C_SLATE}•${C_RESET} ${notify_str}"
+  local autorepo_str="${C_GREEN}✓ Bi-Sync${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✓ Semantic Commits${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✓ Auto-Repo (${REPO_VISIBILITY})${C_RESET} ${C_SLATE}•${C_RESET} ${notify_str}"
 
   cfg_short="${CONFIG_FILE:-<defaults>}"
   cfg_short="${cfg_short/#${HOME}/~}"
@@ -1097,7 +1097,7 @@ cmd_notify() {
   branch_name="$(get_branch || echo main)"
 
   if ! has_notification_channel; then
-    printf '\n  %s⚠️  No Telegram Bot or Webhook URL is configured yet in %s.%s\n\n' "${C_AMBER}${C_BOLD}" "${CONFIG_FILE:-syncalibur.env}" "${C_RESET}"
+    printf '\n  %s▲  No Telegram Bot or Webhook URL is configured yet in %s.%s\n\n' "${C_AMBER}${C_BOLD}" "${CONFIG_FILE:-syncalibur.env}" "${C_RESET}"
     printf '  %sTo enable First-Class Telegram Bot notifications:%s\n' "${C_GOLD}${C_BOLD}" "${C_RESET}"
     printf '    1. Open Telegram and message %s@BotFather%s -> %s/newbot%s to get a token\n' "${C_CYAN}" "${C_RESET}" "${C_WHITE}" "${C_RESET}"
     printf '    2. Set %sSYNCALIBUR_TELEGRAM_BOT_TOKEN="..."%s and %sSYNCALIBUR_TELEGRAM_CHAT_ID="..."%s in %ssyncalibur.env%s\n' "${C_CYAN}" "${C_RESET}" "${C_CYAN}" "${C_RESET}" "${C_WHITE}" "${C_RESET}"
@@ -1107,10 +1107,10 @@ cmd_notify() {
 
   printf '  %s📡 Dispatching notification for %s (%s)...%s\n' "${C_CYAN}" "${repo_name}" "${branch_name}" "${C_RESET}"
   if send_webhook_notification "test" "Syncalibur Notification (${repo_name})" "${custom_msg}" "Triggered via: syncalibur notify" "sync"; then
-    printf '  %s✔ Notification delivered successfully!%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
+    printf '  %s✓ Notification delivered successfully!%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
     return 0
   else
-    printf '  %s✖ Failed to deliver notification. Check your token/chat_id or webhook URL in %s.%s\n' "${C_RED}${C_BOLD}" "${CONFIG_FILE:-syncalibur.env}" "${C_RESET}" >&2
+    printf '  %s✕ Failed to deliver notification. Check your token/chat_id or webhook URL in %s.%s\n' "${C_RED}${C_BOLD}" "${CONFIG_FILE:-syncalibur.env}" "${C_RESET}" >&2
     return 1
   fi
 }
@@ -1160,7 +1160,7 @@ record_sync_failure() {
 
 clear_sync_failure() {
   if [[ -f "${FAIL_REPORT_FILE}" ]]; then
-    send_webhook_notification "recovery" "✔ Syncalibur Recovered ($(basename "${REPO_ROOT}"))" "Synchronization restored after previous error." "All remotes in sync."
+    send_webhook_notification "recovery" "✓ Syncalibur Recovered ($(basename "${REPO_ROOT}"))" "Synchronization restored after previous error." "All remotes in sync."
   fi
   rm -f "${FAIL_REPORT_FILE}" "${ALERT_STATE_FILE}" 2>/dev/null || true
 }
@@ -1186,7 +1186,7 @@ send_desktop_alert() {
 trigger_failure_alert() {
   local stage="$1" reason="$2" details="$3" remote="${4:-$(get_remote)}" branch="${5:-$(get_branch || echo main)}"
   record_sync_failure "${stage}" "${reason}" "${details}" "${remote}" "${branch}"
-  send_webhook_notification "failure" "✖ Syncalibur Alert — ${stage}" "${reason}" "${details}"
+  send_webhook_notification "failure" "✕ Syncalibur Alert — ${stage}" "${reason}" "${details}"
 
   [[ "${ALERT_TERMINAL}" == "true" ]] || return 0
 
@@ -1289,10 +1289,10 @@ cmd_alert() {
   fi
 
   local box_color="${C_RED}"
-  local box_title="✖  S Y N C   F A I L E D   —   D I A G N O S T I C   R E P O R T"
+  local box_title="✕  S Y N C   F A I L E D   —   D I A G N O S T I C   R E P O R T"
   if [[ ! -f "${FAIL_REPORT_FILE}" && "${mode}" != "--test" ]]; then
     box_color="${C_GREEN}"
-    box_title="✔  D I A G N O S T I C   S T A T U S   —   A L L   S Y S T E M S   HEALTHY"
+    box_title="✓  D I A G N O S T I C   S T A T U S   —   A L L   S Y S T E M S   HEALTHY"
   fi
 
   printf '  %s╭────────────────────────────────────────────────────────────────────────────────────────╮%s\n' "${box_color}" "${C_RESET}"
@@ -1464,12 +1464,12 @@ render_auto_pr_body() {
 
 ---
 
-## 📂 Changed Files & Diff Telemetry
+## ◆ Changed Files & Diff Telemetry
 
 ${changed_list}
 ---
 
-## 🧩 Component Area
+## ◆ Component Area
 
 - [${chk_go}] **Go Core Engine** (\`cmd/syncalibur-engine/main.go\`)
 - [${chk_sh}] **Daemon & Service Supervisor** (\`syncalibur.sh\`)
@@ -1479,7 +1479,7 @@ ${changed_list}
 
 ---
 
-## 🛡️ Verification & Safety Checklist
+## ⛨ Verification & Safety Checklist
 
 - [x] Secret & large-file safety shield verified (no \`.env\`, \`.pem\`, \`.key\`, \`.tfstate\`, or binaries > ${MAX_FILE_SIZE_MB} MiB)
 - [x] Personal \`syncalibur.env\` and \`repos.list\` files are **not** included in this PR
@@ -1519,22 +1519,22 @@ cmd_pr() {
     return 0
   fi
 
-  echo "📤 Pushing branch '${pr_branch}' to origin..."
+  echo "↗ Pushing branch '${pr_branch}' to origin..."
   git push -u origin "HEAD:refs/heads/${pr_branch}" || return 1
 
   if command -v gh >/dev/null 2>&1; then
-    echo "🔀 Opening GitHub Pull Request (${pr_branch} -> ${base_branch}) with Syncalibur PR Template..."
+    echo "⇄ Opening GitHub Pull Request (${pr_branch} -> ${base_branch}) with Syncalibur PR Template..."
     pr_url="$(gh pr create --base "${base_branch}" --head "${pr_branch}" --title "${pr_title}" --body "${pr_body}" 2>&1)" && {
-      echo "✅ Pull Request created: ${pr_url}"
-      send_webhook_notification "summary" "🔀 Pull Request Opened ($(basename "${REPO_ROOT}"))" "${pr_title}" "${pr_url}"
+      echo "✓ Pull Request created: ${pr_url}"
+      send_webhook_notification "summary" "⇄ Pull Request Opened ($(basename "${REPO_ROOT}"))" "${pr_title}" "${pr_url}"
       return 0
     }
-    echo "⚠️  ${pr_url}" >&2
+    echo "▲  ${pr_url}" >&2
   elif command -v glab >/dev/null 2>&1; then
-    echo "🔀 Opening GitLab Merge Request (${pr_branch} -> ${base_branch}) with Syncalibur PR Template..."
+    echo "⇄ Opening GitLab Merge Request (${pr_branch} -> ${base_branch}) with Syncalibur PR Template..."
     glab mr create --target-branch "${base_branch}" --source-branch "${pr_branch}" --title "${pr_title}" --description "${pr_body}" --yes && return 0
   else
-    echo "ℹ️  Install 'gh' (GitHub CLI) or 'glab' (GitLab CLI) to create PRs directly from the terminal."
+    echo "ℹ  Install 'gh' (GitHub CLI) or 'glab' (GitLab CLI) to create PRs directly from the terminal."
     printf '\n%s\n' "${pr_body}"
   fi
 }
@@ -1584,25 +1584,25 @@ sync_and_update_self_repo() {
         s_msg="chore(syncalibur): self-sync ($(date '+%H:%M:%S'))"
       fi
       if git -C "${SELF_REPO_ROOT}" commit -m "${s_msg}" >> "${LOG_FILE}" 2>&1; then
-        log "🔄 Self-Sync: Committed Syncalibur update: ${s_msg}"
+        log "⇄ Self-Sync: Committed Syncalibur update: ${s_msg}"
         local p_out
         if p_out="$(run_with_timeout "${PUSH_TIMEOUT}" git -C "${SELF_REPO_ROOT}" push -u "${self_remote}" "${self_branch}" 2>&1)"; then
           printf '%s\n' "${p_out}" >> "${LOG_FILE}"
-          log "🎉 Self-Sync: Pushed Syncalibur repository updates to ${self_remote}/${self_branch}."
+          log "✓ Self-Sync: Pushed Syncalibur repository updates to ${self_remote}/${self_branch}."
         elif grep -qiE 'GH006|protected branch|Required status check|At least 1 approving review' <<< "${p_out}"; then
           local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')" pr_body
           pr_body="$(render_auto_pr_body "${SELF_REPO_ROOT}" "${self_branch}" "${pr_branch}" "${s_msg}" "Self-Sync Protected Branch Auto-PR (\`GH006\`)")"
-          log "🔀 Self-Sync: '${self_branch}' is protected; pushing feature branch '${pr_branch}' & opening templated Pull Request..."
+          log "⇄ Self-Sync: '${self_branch}' is protected; pushing feature branch '${pr_branch}' & opening templated Pull Request..."
           if git -C "${SELF_REPO_ROOT}" push -u "${self_remote}" "HEAD:refs/heads/${pr_branch}" >> "${LOG_FILE}" 2>&1; then
             if command -v gh >/dev/null 2>&1; then
               gh pr create -R YusufKaya00/Syncalibur --base "${self_branch}" --head "${pr_branch}" --title "${s_msg}" --body "${pr_body}" >> "${LOG_FILE}" 2>&1 || true
             fi
             git -C "${SELF_REPO_ROOT}" reset --hard "${self_remote}/${self_branch}" >/dev/null 2>&1 || true
-            log "🎉 Self-Sync: Opened templated Pull Request '${pr_branch}' -> '${self_branch}'."
+            log "✓ Self-Sync: Opened templated Pull Request '${pr_branch}' -> '${self_branch}'."
           fi
         else
           printf '%s\n' "${p_out}" >> "${LOG_FILE}"
-          log "⚠️  Self-Sync push failed: $(push_error_summary "${p_out}")"
+          log "▲  Self-Sync push failed: $(push_error_summary "${p_out}")"
           trigger_failure_alert "SELF-REPO PUSH (${SELF_REPO_ROOT})" "Failed to push Syncalibur self-repository to ${self_remote}/${self_branch}" "${p_out}"
         fi
       fi
@@ -1620,7 +1620,7 @@ sync_and_update_self_repo() {
   behind_cnt="$(git -C "${SELF_REPO_ROOT}" rev-list --count "HEAD..refs/remotes/${self_remote}/${self_branch}" 2>/dev/null || echo 0)"
   (( behind_cnt > 0 )) || return 0
 
-  log "🔄 Self-Update: Detected ${behind_cnt} new upstream commit(s) in Syncalibur (${local_sha:0:7} -> ${remote_sha:0:7}). Pulling & rebuilding..."
+  log "⇄ Self-Update: Detected ${behind_cnt} new upstream commit(s) in Syncalibur (${local_sha:0:7} -> ${remote_sha:0:7}). Pulling & rebuilding..."
   local pull_out
   if pull_out="$(run_with_timeout 60 git -C "${SELF_REPO_ROOT}" pull --rebase --autostash "${self_remote}" "${self_branch}" 2>&1)"; then
     printf '%s\n' "${pull_out}" >> "${LOG_FILE}"
@@ -1630,7 +1630,7 @@ sync_and_update_self_repo() {
     ensure_logo_ansi || true
     clear_sync_failure
     send_webhook_notification "summary" "⟳ Syncalibur Self-Updated (${local_sha:0:7} → ${remote_sha:0:7})" "Pulled ${behind_cnt} upstream commit(s), rebuilt Go engine, and hot-reloaded daemon." "${pull_out}"
-    log "✅ Self-Update: Syncalibur updated to ${remote_sha:0:7}; hot-reloading daemon in the background..."
+    log "✓ Self-Update: Syncalibur updated to ${remote_sha:0:7}; hot-reloading daemon in the background..."
     trap - EXIT
     if [[ -x "${GO_ENGINE_BIN}" ]]; then
       exec "${GO_ENGINE_BIN}" daemon-exec "${SCRIPT_PATH}" run
@@ -1640,7 +1640,7 @@ sync_and_update_self_repo() {
   else
     printf '%s\n' "${pull_out}" >> "${LOG_FILE}"
     git -C "${SELF_REPO_ROOT}" rebase --abort >/dev/null 2>&1 || true
-    log "⚠️  Self-Update failed: $(push_error_summary "${pull_out}")"
+    log "▲  Self-Update failed: $(push_error_summary "${pull_out}")"
     trigger_failure_alert "SELF-UPDATE (${SELF_REPO_ROOT})" "Failed to pull latest Syncalibur update from ${self_remote}/${self_branch}" "${pull_out}"
   fi
 }
@@ -1719,7 +1719,7 @@ warn_blocked() {
     *$'\n'"${path}"$'\n'*) return 0 ;;
   esac
   WARNED_PATHS="${WARNED_PATHS}"$'\n'"${path}"
-  log "🚫 Not committing '${path}': ${reason}. Add it to .gitignore to silence this warning."
+  log "▲ Not committing '${path}': ${reason}. Add it to .gitignore to silence this warning."
 }
 
 trim_log() {
@@ -2004,7 +2004,7 @@ push_changes() {
       printf '%s\n' "${output}" >> "${LOG_FILE}"
       if (( rc == 0 )); then
         clear_sync_failure
-        log "🎉 Push succeeded after auto-creating remote repository (${targets_desc})."
+        log "✓ Push succeeded after auto-creating remote repository (${targets_desc})."
         send_webhook_notification "success" "★ Syncalibur Created Remote & Pushed ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Target: ${targets_desc} (${branch})"
         return 0
       fi
@@ -2013,10 +2013,10 @@ push_changes() {
 
   if (( rc == 124 )); then
     err_summary="Push timed out after ${PUSH_TIMEOUT}s (${targets_desc})"
-    log "⚠️  ${err_summary}."
+    log "▲  ${err_summary}."
   else
     err_summary="$(push_error_summary "${output}")"
-    log "⚠️  Push failed: ${err_summary}"
+    log "▲  Push failed: ${err_summary}"
   fi
 
   trigger_failure_alert "GIT PUSH (${remote}/${branch})" "${err_summary}" "${output}" "${remote}" "${branch}"
@@ -2033,7 +2033,7 @@ cmd_fleet() {
 
   case "${subcmd}" in
     add)
-      [[ -n "${arg}" ]] || { echo "❌ Usage: syncalibur fleet add <path>"; return 1; }
+      [[ -n "${arg}" ]] || { echo "✕ Usage: syncalibur fleet add <path>"; return 1; }
       local target
       target="$(resolve_path "$(normalize_path_input "${arg}")")"
       mkdir -p "${target}" 2>/dev/null || true
@@ -2043,24 +2043,24 @@ cmd_fleet() {
       touch "${FLEET_LIST_FILE}"
       if ! grep -Fxq "${target}" "${FLEET_LIST_FILE}" 2>/dev/null; then
         printf '%s\n' "${target}" >> "${FLEET_LIST_FILE}"
-        echo "✅ Added '${target}' to Syncalibur Fleet (${FLEET_LIST_FILE})."
+        echo "✓ Added '${target}' to Syncalibur Fleet (${FLEET_LIST_FILE})."
       else
-        echo "ℹ️  '${target}' is already enrolled in Fleet."
+        echo "ℹ  '${target}' is already enrolled in Fleet."
       fi
       ;;
     remove | rm)
-      [[ -n "${arg}" && -f "${FLEET_LIST_FILE}" ]] || { echo "❌ Usage: syncalibur fleet remove <path>"; return 1; }
+      [[ -n "${arg}" && -f "${FLEET_LIST_FILE}" ]] || { echo "✕ Usage: syncalibur fleet remove <path>"; return 1; }
       local target tmp
       target="$(resolve_path "$(normalize_path_input "${arg}")")"
       tmp="$(mktemp)"
       grep -Fxv "${target}" "${FLEET_LIST_FILE}" > "${tmp}" || true
       mv "${tmp}" "${FLEET_LIST_FILE}"
-      echo "✅ Removed '${target}' from Syncalibur Fleet."
+      echo "✓ Removed '${target}' from Syncalibur Fleet."
       ;;
     scan)
       local scan_dir="${arg:-${HOME}}"
       scan_dir="$(resolve_path "$(normalize_path_input "${scan_dir}")")"
-      echo "🔍 Scanning '${scan_dir}' for Git repositories via Go engine..."
+      echo "◇ Scanning '${scan_dir}' for Git repositories via Go engine..."
       touch "${FLEET_LIST_FILE}"
       local count=0 repo
       if ensure_go_engine; then
@@ -2082,10 +2082,10 @@ cmd_fleet() {
           fi
         done < <(find "${scan_dir}" -maxdepth 3 -name ".git" -type d 2>/dev/null)
       fi
-      echo "✨ Fleet scan complete (${count} new repository/repositories enrolled)."
+      echo "✦ Fleet scan complete (${count} new repository/repositories enrolled)."
       ;;
     start)
-      [[ -f "${FLEET_LIST_FILE}" ]] || { echo "⚠️  No fleet list found. Run 'syncalibur fleet scan' or 'syncalibur fleet add <path>' first."; return 1; }
+      [[ -f "${FLEET_LIST_FILE}" ]] || { echo "▲  No fleet list found. Run 'syncalibur fleet scan' or 'syncalibur fleet add <path>' first."; return 1; }
       local line
       while IFS= read -r line; do
         line="${line%%#*}"
@@ -2122,7 +2122,7 @@ cmd_fleet() {
 # ==============================================================================
 
 cmd_ui() {
-  [[ -t 0 && -t 1 ]] || { echo "❌ 'syncalibur ui' requires an interactive terminal (TTY)." >&2; return 1; }
+  [[ -t 0 && -t 1 ]] || { echo "✕ 'syncalibur ui' requires an interactive terminal (TTY)." >&2; return 1; }
   if ensure_go_engine; then
     "${GO_ENGINE_BIN}" ui "${SCRIPT_PATH}" "${REPO_ROOT}"
   else
@@ -2272,7 +2272,7 @@ acquire_single_instance_lock() {
 on_exit() {
   [[ -n "${NAP_PID}" ]] && kill "${NAP_PID}" 2>/dev/null || true
   rm -f "${PID_FILE}"
-  log "🛑 Syncalibur stopped."
+  log "○ Syncalibur stopped."
 }
 
 run_daemon() {
@@ -2290,7 +2290,7 @@ run_daemon() {
   fi
 
   if ! acquire_single_instance_lock; then
-    log "❌ Another Syncalibur instance is already running for ${REPO_ROOT}."
+    log "✕ Another Syncalibur instance is already running for ${REPO_ROOT}."
     exit 1
   fi
   echo "${SYNCALIBUR_SUPERVISOR_PID:-$$}" > "${PID_FILE}"
@@ -2313,13 +2313,13 @@ run_daemon() {
     remote="$(get_remote)"
   fi
 
-  log "🚀 Syncalibur started. Repo: ${REPO_ROOT} (scope: ${SCOPE}, watcher: ${FS_WATCHER})"
-  log "🎯 Targets: $(describe_push_targets_inline "${remote}")"
-  log "👤 Identity: ${git_user} <${git_email}> (GitHub: ${gh_user:-n/a}, GitLab: ${gl_user:-n/a}, Key: ${ssh_cred})"
+  log "● Syncalibur started. Repo: ${REPO_ROOT} (scope: ${SCOPE}, watcher: ${FS_WATCHER})"
+  log "◆ Targets: $(describe_push_targets_inline "${remote}")"
+  log "◆ Identity: ${git_user} <${git_email}> (GitHub: ${gh_user:-n/a}, GitLab: ${gl_user:-n/a}, Key: ${ssh_cred})"
   if [[ "${SELF_AUTO_UPDATE}" == "true" && -n "${SELF_REPO_ROOT}" ]]; then
-    log "🔄 Self-Update: Watching Syncalibur repo (${SELF_REPO_ROOT}) for local & upstream updates every ${SELF_CHECK_INTERVAL}s."
+    log "⇄ Self-Update: Watching Syncalibur repo (${SELF_REPO_ROOT}) for local & upstream updates every ${SELF_CHECK_INTERVAL}s."
   fi
-  log "⏱️  Poll: ${POLL_INTERVAL}s | Debounce: ${DEBOUNCE_WAIT}s (max ${MAX_DEBOUNCE}s) | Max file size: ${MAX_FILE_SIZE_MB} MiB"
+  log "◆  Poll: ${POLL_INTERVAL}s | Debounce: ${DEBOUNCE_WAIT}s (max ${MAX_DEBOUNCE}s) | Max file size: ${MAX_FILE_SIZE_MB} MiB"
 
   while true; do
     trim_log
@@ -2329,7 +2329,7 @@ run_daemon() {
 
     # Honor interactive pause toggle from `syncalibur ui` / `syncalibur pause`
     if [[ -f "${PAUSE_FILE}" ]]; then
-      notice "⏸️  Paused by user. Run 'syncalibur resume' or press [p] in 'syncalibur ui' to resume."
+      notice "▲  Paused by user. Run 'syncalibur resume' or press [p] in 'syncalibur ui' to resume."
       nap "${POLL_INTERVAL}"
       continue
     fi
@@ -2343,11 +2343,11 @@ run_daemon() {
     remote="$(get_remote)"
 
     if ! branch="$(get_branch)"; then
-      notice "⏸️  Detached HEAD; paused until a branch is checked out."
+      notice "▲  Detached HEAD; paused until a branch is checked out."
       nap; continue
     fi
     if busy="$(repo_busy)"; then
-      notice "⏸️  Git operation in progress (${busy}); paused."
+      notice "▲  Git operation in progress (${busy}); paused."
       nap; continue
     fi
     LAST_NOTICE=""
@@ -2359,7 +2359,7 @@ run_daemon() {
     if has_changes_in_scope; then
       snap="$(snapshot)"
       if (( force_sync )) || [[ "${snap}" != "${idle_snapshot}" ]]; then
-        log "📝 Changes detected; waiting for writes to settle..."
+        log "✦ Changes detected; waiting for writes to settle..."
         (( ! force_sync )) && wait_for_quiet
         repo_busy >/dev/null && continue
         if commit_changes; then
@@ -2388,7 +2388,7 @@ run_daemon() {
         retry_delay="${RETRY_BASE}"
       else
         next_retry=$(( $(date +%s) + retry_delay ))
-        log "🔁 Retrying the push in ${retry_delay}s."
+        log "↻ Retrying the push in ${retry_delay}s."
         retry_delay=$(( retry_delay * 2 > RETRY_MAX ? RETRY_MAX : retry_delay * 2 ))
       fi
     fi
@@ -2438,7 +2438,7 @@ EOF
 start_background_nohup() {
   local pid
   if pid="$(daemon_pid)"; then
-    echo "⚠️  Syncalibur is already running (PID ${pid})."
+    echo "▲  Syncalibur is already running (PID ${pid})."
     return 0
   fi
   mkdir -p "$(dirname "${LOG_FILE}")"
@@ -2452,23 +2452,23 @@ start_background_nohup() {
   fi
   sleep 1
   if pid="$(daemon_pid)"; then
-    echo "✅ Syncalibur started in the background (PID ${pid})."
-    echo "📋 Follow logs : syncalibur logs"
-    echo "🖥️  Live TUI    : syncalibur ui"
+    echo "✓ Syncalibur started in the background (PID ${pid})."
+    echo "• Follow logs : syncalibur logs"
+    echo "•  Live TUI    : syncalibur ui"
     return 0
   fi
-  echo "❌ Failed to start. Check '${LOG_FILE}' for details." >&2
+  echo "✕ Failed to start. Check '${LOG_FILE}' for details." >&2
   return 1
 }
 
 stop_background_pid() {
   local pid
   if ! pid="$(daemon_pid)"; then
-    echo "ℹ️  Syncalibur is not running."
+    echo "ℹ  Syncalibur is not running."
     rm -f "${PID_FILE}"
     return 0
   fi
-  echo "🛑 Stopping Syncalibur (PID ${pid})..."
+  echo "○ Stopping Syncalibur (PID ${pid})..."
   kill "${pid}" 2>/dev/null || true
   for _ in 1 2 3 4 5; do
     kill -0 "${pid}" 2>/dev/null || break
@@ -2476,7 +2476,7 @@ stop_background_pid() {
   done
   kill -0 "${pid}" 2>/dev/null && kill -9 "${pid}" 2>/dev/null || true
   rm -f "${PID_FILE}"
-  echo "✅ Syncalibur stopped."
+  echo "✓ Syncalibur stopped."
 }
 
 cmd_install() {
@@ -2485,7 +2485,7 @@ cmd_install() {
 
   if [[ ! -f "${DEFAULT_ENV_FILE}" ]]; then
     save_repo_path_to_env "${WATCH_PATH}"
-    echo "📝 Created local config file: ${DEFAULT_ENV_FILE} (watching ${WATCH_PATH})"
+    echo "✦ Created local config file: ${DEFAULT_ENV_FILE} (watching ${WATCH_PATH})"
   fi
 
   local exec_start_cmd="/usr/bin/env bash \"${SCRIPT_PATH}\" run"
@@ -2519,7 +2519,7 @@ EOF
       systemctl --user daemon-reload \
         && systemctl --user enable "${SERVICE_NAME}" >/dev/null 2>&1 \
         && systemctl --user restart "${SERVICE_NAME}" \
-        || { echo "❌ Could not enable/start systemd service '${SERVICE_NAME}'." >&2; return 1; }
+        || { echo "✕ Could not enable/start systemd service '${SERVICE_NAME}'." >&2; return 1; }
       command -v loginctl >/dev/null 2>&1 && loginctl enable-linger "${USER:-$(id -un)}" 2>/dev/null || true
       ;;
 
@@ -2597,7 +2597,7 @@ EOF
 EOF
       fi
       launchctl unload "${PLIST_FILE}" >/dev/null 2>&1 || true
-      launchctl load -w "${PLIST_FILE}" || { echo "❌ launchctl load failed." >&2; return 1; }
+      launchctl load -w "${PLIST_FILE}" || { echo "✕ launchctl load failed." >&2; return 1; }
       ;;
 
     windows-startup)
@@ -2644,7 +2644,7 @@ EOF
 
   sleep 1
   print_syncalibur_dashboard
-  echo "  ${C_GREEN}${C_BOLD}✔ Syncalibur installed and active!${C_RESET} Global CLI '${C_CYAN}syncalibur${C_RESET}' is ready."
+  echo "  ${C_GREEN}${C_BOLD}✓ Syncalibur installed and active!${C_RESET} Global CLI '${C_CYAN}syncalibur${C_RESET}' is ready."
   echo ""
 }
 
@@ -2657,7 +2657,7 @@ cmd_uninstall() {
         systemctl --user daemon-reload 2>/dev/null || true
       fi
       stop_background_pid >/dev/null 2>&1 || true
-      echo "✅ Stopped, disabled and removed systemd service '${SERVICE_NAME}'."
+      echo "✓ Stopped, disabled and removed systemd service '${SERVICE_NAME}'."
       ;;
     launchd)
       if [[ -f "${PLIST_FILE}" ]]; then
@@ -2665,12 +2665,12 @@ cmd_uninstall() {
         rm -f "${PLIST_FILE}"
       fi
       stop_background_pid >/dev/null 2>&1 || true
-      echo "✅ Stopped and removed macOS LaunchAgent '${PLIST_LABEL}'."
+      echo "✓ Stopped and removed macOS LaunchAgent '${PLIST_LABEL}'."
       ;;
     windows-startup)
       rm -f "$(win_startup_vbs_path)"
       stop_background_pid
-      echo "✅ Removed Windows Startup launcher and stopped Syncalibur."
+      echo "✓ Removed Windows Startup launcher and stopped Syncalibur."
       ;;
     cron)
       if command -v crontab >/dev/null 2>&1; then
@@ -2678,7 +2678,7 @@ cmd_uninstall() {
       fi
       rm -f "${DESKTOP_FILE}"
       stop_background_pid
-      echo "✅ Removed autostart entries and stopped Syncalibur."
+      echo "✓ Removed autostart entries and stopped Syncalibur."
       ;;
   esac
 }
@@ -2688,14 +2688,14 @@ cmd_start() {
   case "${SERVICE_BACKEND}" in
     systemd)
       if is_service_installed; then
-        systemctl --user start "${SERVICE_NAME}" && echo "✅ Started systemd user service '${SERVICE_NAME}'."
+        systemctl --user start "${SERVICE_NAME}" && echo "✓ Started systemd user service '${SERVICE_NAME}'."
         return
       fi
       ;;
     launchd)
       if is_service_installed; then
         launchctl start "${PLIST_LABEL}" 2>/dev/null || launchctl load -w "${PLIST_FILE}" 2>/dev/null
-        echo "✅ Started macOS LaunchAgent '${PLIST_LABEL}'."
+        echo "✓ Started macOS LaunchAgent '${PLIST_LABEL}'."
         return
       fi
       ;;
@@ -2707,7 +2707,7 @@ cmd_stop() {
   case "${SERVICE_BACKEND}" in
     systemd)
       if is_service_installed && systemctl --user is-active --quiet "${SERVICE_NAME}"; then
-        systemctl --user stop "${SERVICE_NAME}" && echo "✅ Stopped systemd user service '${SERVICE_NAME}'."
+        systemctl --user stop "${SERVICE_NAME}" && echo "✓ Stopped systemd user service '${SERVICE_NAME}'."
         return
       fi
       ;;
@@ -2715,7 +2715,7 @@ cmd_stop() {
       if is_service_installed; then
         launchctl unload "${PLIST_FILE}" >/dev/null 2>&1 || true
         stop_background_pid >/dev/null 2>&1 || true
-        echo "✅ Stopped macOS LaunchAgent '${PLIST_LABEL}'."
+        echo "✓ Stopped macOS LaunchAgent '${PLIST_LABEL}'."
         return
       fi
       ;;
@@ -2730,14 +2730,14 @@ cmd_restart() {
   case "${SERVICE_BACKEND}" in
     systemd)
       if is_service_installed; then
-        systemctl --user restart "${SERVICE_NAME}" && echo "✅ Restarted '${SERVICE_NAME}'."
+        systemctl --user restart "${SERVICE_NAME}" && echo "✓ Restarted '${SERVICE_NAME}'."
         return
       fi
       ;;
     launchd)
       if is_service_installed; then
         launchctl unload "${PLIST_FILE}" >/dev/null 2>&1 || true
-        launchctl load -w "${PLIST_FILE}" && echo "✅ Restarted '${PLIST_LABEL}'."
+        launchctl load -w "${PLIST_FILE}" && echo "✓ Restarted '${PLIST_LABEL}'."
         return
       fi
       ;;
@@ -2757,7 +2757,7 @@ cmd_status() {
     f_stage="$(sed -n '2p' "${FAIL_REPORT_FILE}")"
     f_reason="$(sed -n '4p' "${FAIL_REPORT_FILE}")"
     f_hint="$(sed -n '5p' "${FAIL_REPORT_FILE}")"
-    printf '  %s%s✖ Active Sync Failure Alert (%s — %s):%s\n' "${C_RED}" "${C_BOLD}" "${f_stage}" "${f_ts}" "${C_RESET}"
+    printf '  %s%s✕ Active Sync Failure Alert (%s — %s):%s\n' "${C_RED}" "${C_BOLD}" "${f_stage}" "${f_ts}" "${C_RESET}"
     printf '    %sReason :%s %s\n' "${C_RED}" "${C_RESET}" "${f_reason}"
     printf '    %sFix    :%s %s\n\n' "${C_AMBER}" "${C_RESET}" "${f_hint}"
   fi
@@ -2765,7 +2765,7 @@ cmd_status() {
   local path reason
   local -a blocked=()
   while IFS= read -r -d '' path; do
-    reason="$(block_reason "${path}")" && blocked+=("    ${C_AMBER}🛡 ${path}${C_RESET} ${C_SLATE}— ${reason}${C_RESET}")
+    reason="$(block_reason "${path}")" && blocked+=("    ${C_AMBER}⛨ ${path}${C_RESET} ${C_SLATE}— ${reason}${C_RESET}")
   done < <(changed_paths)
   if (( ${#blocked[@]} > 0 )); then
     printf '  %s%sSkipped Files (%d):%s\n' "${C_AMBER}" "${C_BOLD}" "${#blocked[@]}" "${C_RESET}"
@@ -2840,8 +2840,8 @@ case "${1:-}" in
     ;;
   pr)         cmd_pr "${2:-}" "${3:-}" ;;
   pull)       cd "${REPO_ROOT}" && safe_bidirectional_sync "$(get_remote)" "$(get_branch || echo main)" 1 ;;
-  sync)       touch "${SYNC_TRIGGER_FILE}" && echo "⚡ Triggered immediate sync cycle." ;;
-  pause)      touch "${PAUSE_FILE}" && echo "⏸️  Syncalibur paused. Run 'syncalibur resume' to continue." ;;
+  sync)       touch "${SYNC_TRIGGER_FILE}" && echo "✦ Triggered immediate sync cycle." ;;
+  pause)      touch "${PAUSE_FILE}" && echo "▲  Syncalibur paused. Run 'syncalibur resume' to continue." ;;
   resume)     rm -f "${PAUSE_FILE}" && echo "▶️  Syncalibur resumed." ;;
   alert)      cmd_alert "${2:-}" ;;
   run)        run_daemon ;;
