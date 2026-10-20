@@ -118,10 +118,11 @@ flowchart TD
    [2] Bidirectional Rebase Check  ──► Fetches remote; runs 'git pull --rebase --autostash'
             │                          (Auto-aborts & pops open Alert Terminal on conflict)
             ▼
-   [3] Pre-Staging Safety Shield   ──► Syntax Pre-flight (Go/Python/JS/JSON) & Shannon Entropy Secret Shield
+   [3] Pre-Staging Safety Shield   ──► Universal Syntax Pre-flight & Shannon Entropy Secret Shield
+            │                          (Go, Python, React JSX/TSX, TypeScript, Node, Java, Bash, YAML, C/C++, Rust)
             │                          (Holds broken syntax ticks & quarantines high-entropy secrets)
             ▼
-   [4] Go Engine AST Commit        ──► Inspects AST/hunks -> "feat(main): update myFunc() (+42/-7)"
+   [4] Go Engine AST Commit        ──► Inspects AST/hunks -> "feat(Component): update myMethod() (+42/-7)"
             │
    [5] Multi-Remote Push & Alert   ──► Pushes to GitHub + GitLab -> Dispatches Telegram / Webhook
 ```
