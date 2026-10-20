@@ -813,6 +813,9 @@ func detectSecretsInFile(filePath string) (bool, string) {
 		// Shannon Entropy check on long continuous strings
 		words := strings.Fields(trimmed)
 		for _, w := range words {
+			if idx := strings.Index(w, "="); idx != -1 {
+				w = w[idx+1:]
+			}
 			w = strings.Trim(w, `"'=:,;()[]{}<>`)
 			if len(w) >= 24 {
 				// Exclude benign high-entropy assets: data URIs, base64 data, UUIDs, pure hex hashes
