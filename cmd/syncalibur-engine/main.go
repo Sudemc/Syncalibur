@@ -3,11 +3,12 @@
 // ------------------------------------------------------------------------------
 // High-performance, zero-dependency Go engine powering Syncalibur's:
 //   1. High-Definition TrueColor Terminal Emblem Renderer (`render-logo`)
-//   2. Semantic Conventional Commit Classifier + Diff-Stat + AI Hook (`commit-msg`)
-//   3. Multi-Repository Fleet Scanner & Parallel Status Probe (`fleet-scan`, `fleet-status`)
-//   4. 7-Day Commit Velocity Sparkline Generator (`sparkline`)
-//   5. First-Class Telegram Bot & Multi-Channel Webhook Dispatcher (`webhook`, `telegram`)
-//   6. Interactive Live TUI Control Center (`ui`)
+//   2. AST-Aware Semantic Conventional Commit Generator (`commit-msg`)
+//   3. Pre-flight Syntax Gate & Shannon Entropy Secret Shield (`preflight`)
+//   4. Multi-Repository Fleet Scanner & Parallel Status Probe (`fleet-scan`, `fleet-status`)
+//   5. 7-Day Commit Velocity Sparkline Generator (`sparkline`)
+//   6. First-Class Telegram Bot & Multi-Channel Webhook Dispatcher (`webhook`, `telegram`)
+//   7. Two-Pane Interactive Live TUI with Scrollable Logs (`ui`)
 // ==============================================================================
 package main
 
@@ -16,6 +17,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"image"
 	"image/color"
 	_ "image/png"
@@ -37,9 +41,11 @@ import (
 	"time"
 )
 
+// ANSI Color Palette (24-bit TrueColor & 16-color Fallback)
 const (
 	cReset = "\033[0m"
 	cBold  = "\033[1m"
+	cDim   = "\033[2m"
 	cGold  = "\033[38;2;245;194;66m"
 	cCyan  = "\033[38;2;56;189;248m"
 	cGreen = "\033[38;2;52;211;153m"
@@ -47,6 +53,28 @@ const (
 	cAmber = "\033[38;2;251;191;36m"
 	cSlate = "\033[38;2;148;163;184m"
 	cWhite = "\033[38;2;241;245;249m"
+	cDark  = "\033[38;2;71;85;105m"
+	cBgBar = "\033[48;2;30;41;59m"
+)
+
+// Lucide / Minimalist Typography Icons
+const (
+	iconCheck   = "✓"
+	iconCross   = "✕"
+	iconWarn    = "▲"
+	iconShield  = "⛨"
+	iconZap     = "⚡"
+	iconSparkle = "✦"
+	iconArrowUp = "↗"
+	iconArrowDn = "↙"
+	iconDot     = "●"
+	iconCircle  = "○"
+	iconDiamond = "◆"
+	iconChevron = "›"
+	iconSync    = "⇄"
+	iconDoctor  = "✚"
+	iconPause   = "⏸"
+	iconPlay    = "▶"
 )
 
 var quads = [16]string{
@@ -62,7 +90,7 @@ type rgbaPx struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: syncalibur <daemon-exec|render-logo|commit-msg|sparkline|fleet-scan|fleet-status|webhook|telegram|ui> [args...]")
+		fmt.Fprintln(os.Stderr, "Usage: syncalibur <daemon-exec|render-logo|commit-msg|preflight|sparkline|fleet-scan|fleet-status|webhook|telegram|ui> [args...]")
 		os.Exit(1)
 	}
 
@@ -72,6 +100,7 @@ func main() {
 			os.Exit(1)
 		}
 		os.Exit(runDaemonSupervisor(os.Args[2], os.Args[3:]...))
+
 	case "render-logo":
 		if len(os.Args) < 4 {
 			os.Exit(1)
@@ -80,18 +109,40 @@ func main() {
 			fmt.Fprintf(os.Stderr, "render-logo error: %v\n", err)
 			os.Exit(1)
 		}
+
 	case "commit-msg":
 		repo := "."
 		if len(os.Args) >= 3 {
 			repo = os.Args[2]
 		}
 		fmt.Println(generateCommitMessage(repo))
+
+	case "preflight":
+		repo := "."
+		stagedOnly := false
+		jsonOut := false
+		for _, arg := range os.Args[2:] {
+			if arg == "--staged-only" {
+				stagedOnly = true
+			} else if arg == "--json" {
+				jsonOut = true
+			} else if !strings.HasPrefix(arg, "-") {
+				repo = arg
+			}
+		}
+		exitCode, output := runPreflight(repo, stagedOnly, jsonOut)
+		if output != "" {
+			fmt.Println(output)
+		}
+		os.Exit(exitCode)
+
 	case "sparkline":
 		repo := "."
 		if len(os.Args) >= 3 {
 			repo = os.Args[2]
 		}
 		fmt.Print(generateSparkline(repo))
+
 	case "fleet-scan":
 		root := "."
 		if len(os.Args) >= 3 {
@@ -100,11 +151,13 @@ func main() {
 		for _, r := range scanGitRepos(root, 3) {
 			fmt.Println(r)
 		}
+
 	case "fleet-status":
 		if len(os.Args) < 3 {
 			os.Exit(1)
 		}
 		printFleetStatusTable(os.Args[2])
+
 	case "webhook":
 		if len(os.Args) < 9 {
 			os.Exit(1)
@@ -113,6 +166,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "webhook error: %v\n", err)
 			os.Exit(1)
 		}
+
 	case "telegram":
 		if len(os.Args) < 10 {
 			os.Exit(1)
@@ -121,6 +175,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "telegram error: %v\n", err)
 			os.Exit(1)
 		}
+
 	case "ui":
 		scriptPath := ""
 		repoRoot := "."
@@ -131,13 +186,14 @@ func main() {
 			repoRoot = os.Args[3]
 		}
 		runInteractiveTUI(scriptPath, repoRoot)
+
 	default:
 		os.Exit(1)
 	}
 }
 
 // ==============================================================================
-// 0. Native Process Supervisor (`daemon-exec`) — Registers `syncalibur` in top/ps
+// 0. Native Process Supervisor (`daemon-exec`)
 // ==============================================================================
 
 func runDaemonSupervisor(scriptPath string, extraArgs ...string) int {
@@ -186,113 +242,79 @@ func runDaemonSupervisor(scriptPath string, extraArgs ...string) int {
 // 1. High-Definition TrueColor Terminal Emblem Renderer
 // ==============================================================================
 
-func renderLogoANSI(srcPath, dstPath string, cols, rows int) error {
+func renderLogoANSI(srcPath, dstPath string, outW, outH int) error {
 	f, err := os.Open(srcPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	img, _, err := image.Decode(f)
+	src, _, err := image.Decode(f)
 	if err != nil {
 		return err
 	}
 
-	b := img.Bounds()
-	minX, minY, maxX, maxY := b.Max.X, b.Max.Y, b.Min.X, b.Min.Y
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			_, _, _, a := img.At(x, y).RGBA()
-			if a>>8 >= 16 {
-				if x < minX {
-					minX = x
-				}
-				if y < minY {
-					minY = y
-				}
-				if x > maxX {
-					maxX = x
-				}
-				if y > maxY {
-					maxY = y
-				}
-			}
+	b := src.Bounds()
+	srcW := b.Dx()
+	srcH := b.Dy()
+
+	pxW := outW * 2
+	pxH := outH * 2
+
+	sample := func(x, y int) rgbaPx {
+		sx := b.Min.X + (x*srcW)/pxW
+		sy := b.Min.Y + (y*srcH)/pxH
+		if sx >= b.Max.X {
+			sx = b.Max.X - 1
 		}
-	}
-	if minX >= maxX || minY >= maxY {
-		minX, minY, maxX, maxY = b.Min.X, b.Min.Y, b.Max.X-1, b.Max.Y-1
-	}
-
-	sw, sh := cols*2, rows*2
-	cropW := float64(maxX - minX + 1)
-	cropH := float64(maxY - minY + 1)
-
-	grid := make([][]rgbaPx, sh)
-	for sy := 0; sy < sh; sy++ {
-		grid[sy] = make([]rgbaPx, sw)
-		for sx := 0; sx < sw; sx++ {
-			fx0 := float64(minX) + (float64(sx)/float64(sw))*cropW
-			fy0 := float64(minY) + (float64(sy)/float64(sh))*cropH
-			fx1 := float64(minX) + (float64(sx+1)/float64(sw))*cropW
-			fy1 := float64(minY) + (float64(sy+1)/float64(sh))*cropH
-
-			var sr, sg, sb, sa, cnt float64
-			for py := int(fy0); py <= int(fy1) && py <= maxY; py++ {
-				for px := int(fx0); px <= int(fx1) && px <= maxX; px++ {
-					c := color.NRGBAModel.Convert(img.At(px, py)).(color.NRGBA)
-					sr += float64(c.R)
-					sg += float64(c.G)
-					sb += float64(c.B)
-					sa += float64(c.A)
-					cnt++
-				}
-			}
-			if cnt == 0 {
-				continue
-			}
-			r, g, bl, al := sr/cnt, sg/cnt, sb/cnt, sa/cnt
-			lum := 0.299*r + 0.587*g + 0.114*bl
-			r = lum + (r-lum)*1.28
-			g = lum + (g-lum)*1.28
-			bl = lum + (bl-lum)*1.28
-			r = (r-128.0)*1.24 + 128.0
-			g = (g-128.0)*1.24 + 128.0
-			bl = (bl-128.0)*1.24 + 128.0
-			grid[sy][sx] = rgbaPx{
-				r: clampByte(r),
-				g: clampByte(g),
-				b: clampByte(bl),
-				a: clampByte(al),
-			}
+		if sy >= b.Max.Y {
+			sy = b.Max.Y - 1
 		}
+		r, g, bVal, a := src.At(sx, sy).RGBA()
+		if a == 0 {
+			return rgbaPx{0, 0, 0, 0}
+		}
+		alpha := float64(a) / 65535.0
+		r8 := clampByte((float64(r) / 65535.0) / alpha * 255.0)
+		g8 := clampByte((float64(g) / 65535.0) / alpha * 255.0)
+		b8 := clampByte((float64(bVal) / 65535.0) / alpha * 255.0)
+		a8 := int(float64(a) / 257.0)
+		return rgbaPx{r8, g8, b8, a8}
 	}
 
 	var out strings.Builder
-	for cy := 0; cy < rows; cy++ {
-		for cx := 0; cx < cols; cx++ {
-			pts := [4]rgbaPx{
-				grid[cy*2][cx*2],
-				grid[cy*2][cx*2+1],
-				grid[cy*2+1][cx*2],
-				grid[cy*2+1][cx*2+1],
-			}
-			mask := 0
+	for cy := 0; cy < outH; cy++ {
+		for cx := 0; cx < outW; cx++ {
+			p00 := sample(cx*2, cy*2)
+			p10 := sample(cx*2+1, cy*2)
+			p01 := sample(cx*2, cy*2+1)
+			p11 := sample(cx*2+1, cy*2+1)
+
+			pts := [4]rgbaPx{p00, p10, p01, p11}
 			var active []rgbaPx
-			for i := 0; i < 4; i++ {
-				if pts[i].a >= 85 {
-					if pts[i].a < 220 {
-						f := float64(pts[i].a) / 255.0
-						pts[i].r = int(float64(pts[i].r) * f)
-						pts[i].g = int(float64(pts[i].g) * f)
-						pts[i].b = int(float64(pts[i].b) * f)
-					}
+			mask := 0
+			for i, p := range pts {
+				if p.a > 32 {
 					mask |= (1 << i)
-					active = append(active, pts[i])
+					active = append(active, p)
 				}
 			}
+
 			if mask == 0 {
 				out.WriteString("\033[0m ")
-			} else if mask != 15 {
+			} else if mask == 15 {
+				var sr, sg, sb int
+				for _, p := range active {
+					sr += p.r
+					sg += p.g
+					sb += p.b
+				}
+				n := len(active)
+				fmt.Fprintf(&out, "\033[0m\033[38;2;%d;%d;%dm█", sr/n, sg/n, sb/n)
+			} else if len(active) == 1 {
+				p := active[0]
+				fmt.Fprintf(&out, "\033[0m\033[38;2;%d;%d;%dm%s", p.r, p.g, p.b, quads[mask])
+			} else if len(active) <= 3 {
 				var sr, sg, sb int
 				for _, p := range active {
 					sr += p.r
@@ -375,8 +397,130 @@ func sqPxErr(list []rgbaPx, c [3]int) float64 {
 }
 
 // ==============================================================================
-// 2. Semantic Conventional Commit Classifier + Diff-Stat + Optional AI Hook
+// 2. AST-Aware Semantic Conventional Commit Generator
 // ==============================================================================
+
+type astSymbolResult struct {
+	Kind   string // method, func, type, test
+	Symbol string // e.g., "(*TokenManager).ValidateToken", "computeSparkline"
+}
+
+// inspectGoAST inspects a Go file to see if the modified lines are inside a function or type
+func inspectGoAST(filePath string, startLine, endLine int) *astSymbolResult {
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, filePath, nil, 0)
+	if err != nil {
+		return nil
+	}
+
+	var found *astSymbolResult
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		if n == nil || found != nil {
+			return false
+		}
+
+		switch x := n.(type) {
+		case *ast.FuncDecl:
+			pos := fset.Position(x.Pos()).Line
+			end := fset.Position(x.End()).Line
+			if startLine >= pos && startLine <= end {
+				name := x.Name.Name
+				if strings.HasPrefix(name, "Test") {
+					found = &astSymbolResult{Kind: "test", Symbol: name}
+					return false
+				}
+				if x.Recv != nil && len(x.Recv.List) > 0 {
+					recvType := exprToString(x.Recv.List[0].Type)
+					found = &astSymbolResult{
+						Kind:   "method",
+						Symbol: fmt.Sprintf("(*%s).%s", recvType, name),
+					}
+					return false
+				}
+				found = &astSymbolResult{
+					Kind:   "func",
+					Symbol: fmt.Sprintf("%s()", name),
+				}
+				return false
+			}
+
+		case *ast.TypeSpec:
+			pos := fset.Position(x.Pos()).Line
+			end := fset.Position(x.End()).Line
+			if startLine >= pos && startLine <= end {
+				found = &astSymbolResult{
+					Kind:   "type",
+					Symbol: fmt.Sprintf("%s struct", x.Name.Name),
+				}
+				return false
+			}
+		}
+		return true
+	})
+
+	return found
+}
+
+func exprToString(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.StarExpr:
+		return exprToString(t.X)
+	case *ast.Ident:
+		return t.Name
+	default:
+		return "Receiver"
+	}
+}
+
+// parseHunkHeader extracts the enclosing function/class from unified diff header
+// e.g. @@ -12,4 +12,6 @@ def authenticate_user():
+var hunkHeaderRegex = regexp.MustCompile(`@@\s+[^@]+@@\s*(?:(?:def|function|class|async\s+def|public|private|fn|func)\s+)?([A-Za-z0-9_.:]+)`)
+
+func detectEnclosingSymbol(repoRoot string, files []string) (string, string) {
+	if len(files) == 0 {
+		return "", ""
+	}
+
+	for _, file := range files {
+		ext := strings.ToLower(filepath.Ext(file))
+		absPath := filepath.Join(repoRoot, file)
+
+		if ext == ".go" {
+			diffOut, err := exec.Command("git", "-C", repoRoot, "diff", "--cached", "-U0", "--", file).Output()
+			if err == nil {
+				reHunk := regexp.MustCompile(`@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@`)
+				for _, line := range strings.Split(string(diffOut), "\n") {
+					if m := reHunk.FindStringSubmatch(line); m != nil {
+						startLine, _ := strconv.Atoi(m[1])
+						count := 1
+						if len(m) > 2 && m[2] != "" {
+							count, _ = strconv.Atoi(m[2])
+						}
+						if res := inspectGoAST(absPath, startLine, startLine+count); res != nil {
+							return res.Kind, res.Symbol
+						}
+					}
+				}
+			}
+		} else if ext == ".py" || ext == ".ts" || ext == ".js" || ext == ".rs" || ext == ".cpp" || ext == ".java" {
+			diffOut, err := exec.Command("git", "-C", repoRoot, "diff", "--cached", "-p", "--", file).Output()
+			if err == nil {
+				for _, line := range strings.Split(string(diffOut), "\n") {
+					if strings.HasPrefix(line, "@@") {
+						if m := hunkHeaderRegex.FindStringSubmatch(line); m != nil {
+							fn := strings.TrimSpace(m[1])
+							if fn != "" && !strings.Contains(fn, "import") {
+								return "func", fmt.Sprintf("%s()", fn)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", ""
+}
 
 func generateCommitMessage(repoRoot string) string {
 	if strings.EqualFold(os.Getenv("SYNCALIBUR_AI_COMMIT"), "true") {
@@ -487,8 +631,23 @@ func generateCommitMessage(repoRoot string) string {
 		cScope = ""
 	}
 
+	symbolKind, symbolName := detectEnclosingSymbol(repoRoot, files)
+	if symbolKind == "test" {
+		cType = "test"
+	}
+
 	var subject string
-	if len(files) == 1 {
+	if symbolName != "" {
+		action := "update"
+		if hasAdd && !hasDel {
+			action = "add"
+		} else if hasDel && !hasAdd {
+			action = "remove"
+		} else if cType == "fix" {
+			action = "fix"
+		}
+		subject = fmt.Sprintf("%s %s", action, symbolName)
+	} else if len(files) == 1 {
 		action := "update"
 		if strings.HasPrefix(statuses[0], "A") {
 			action = "add"
@@ -539,55 +698,281 @@ func tryAICommitMessage(repoRoot string) string {
 		return ""
 	}
 	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return ""
 	}
 	defer resp.Body.Close()
-	var parsed struct {
-		Response string `json:"response"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+
+	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
-	line := strings.TrimSpace(strings.Split(parsed.Response, "\n")[0])
-	line = strings.Trim(line, "`\"'")
-	if regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|build|ci|chore)(\([a-zA-Z0-9_-]+\))?:\s+.+$`).MatchString(line) {
-		return line
+
+	var res struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return ""
+	}
+
+	clean := strings.TrimSpace(res.Response)
+	clean = strings.Trim(clean, "`\"'\n\r ")
+	if idx := strings.Index(clean, "\n"); idx != -1 {
+		clean = strings.TrimSpace(clean[:idx])
+	}
+
+	if regexp.MustCompile(`^(feat|fix|docs|refactor|test|chore|build|ci|style)(\([a-zA-Z0-9_-]+\))?:\s*.+`).MatchString(clean) {
+		return clean
 	}
 	return ""
 }
 
 // ==============================================================================
-// 3. 7-Day Commit Velocity Sparkline Generator
+// 3. Pre-flight Syntax Gate & Shannon Entropy Secret Shield (`preflight`)
 // ==============================================================================
 
-func generateSparkline(repoRoot string) string {
-	glyphs := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
-	counts := make([]int, 7)
-	now := time.Now()
-	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+func calculateShannonEntropy(s string) float64 {
+	if len(s) == 0 {
+		return 0
+	}
+	freq := make(map[rune]float64)
+	for _, r := range s {
+		freq[r]++
+	}
+	total := float64(len(s))
+	var entropy float64
+	for _, count := range freq {
+		p := count / total
+		entropy -= p * math.Log2(p)
+	}
+	return entropy
+}
 
-	out, _ := exec.Command("git", "-C", repoRoot, "log", "--since=7 days ago", "--format=%at").Output()
-	total7d := 0
-	for _, s := range strings.Fields(string(out)) {
-		ts, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			continue
+var knownSecretRegexes = []*regexp.Regexp{
+	regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),                           // AWS Access Key ID
+	regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9_]{36,}\b`),                // GitHub Tokens
+	regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{32,}\b`),                      // OpenAI Key
+	regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}\b`),               // Slack Token
+	regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),             // Private Key
+	regexp.MustCompile(`(?i)(?:api[_-]?key|secret|password|token)\s*[:=]\s*["']([A-Za-z0-9_\-+/=]{20,})["']`), // Generic Secret assignments
+}
+
+func detectSecretsInFile(filePath string) (bool, string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return false, ""
+	}
+	lines := strings.Split(string(data), "\n")
+	for lineNum, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
+			// Skip explicit sample/example comments
+			if strings.Contains(strings.ToLower(trimmed), "example") || strings.Contains(strings.ToLower(trimmed), "test") {
+				continue
+			}
 		}
-		t := time.Unix(ts, 0)
-		tDay := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, now.Location())
-		daysAgo := int(startOfToday.Sub(tDay).Hours() / 24)
-		if daysAgo >= 0 && daysAgo < 7 {
-			counts[6-daysAgo]++
-			total7d++
+
+		for _, re := range knownSecretRegexes {
+			if m := re.FindString(trimmed); m != nil {
+				return true, fmt.Sprintf("%s:%d (matches known credential signature)", filepath.Base(filePath), lineNum+1)
+			}
+		}
+
+		// Shannon Entropy check on long continuous strings
+		words := strings.Fields(trimmed)
+		for _, w := range words {
+			w = strings.Trim(w, `"'=:,;()[]{}<>`)
+			if len(w) >= 24 {
+				ent := calculateShannonEntropy(w)
+				if ent >= 4.4 {
+					hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(w)
+					hasDigit := regexp.MustCompile(`[0-9]`).MatchString(w)
+					if hasLetter && hasDigit {
+						return true, fmt.Sprintf("%s:%d (high entropy %.2f bit/char token)", filepath.Base(filePath), lineNum+1, ent)
+					}
+				}
+			}
+		}
+	}
+	return false, ""
+}
+
+func validateFileSyntax(repoRoot, relPath string) (bool, string) {
+	absPath := filepath.Join(repoRoot, relPath)
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return true, "" // file might be deleted in git
+	}
+
+	ext := strings.ToLower(filepath.Ext(relPath))
+	switch ext {
+	case ".go":
+		fset := token.NewFileSet()
+		if _, err := parser.ParseFile(fset, absPath, data, parser.AllErrors); err != nil {
+			return false, fmt.Sprintf("%s: %v", relPath, err)
+		}
+	case ".py":
+		if _, err := exec.LookPath("python3"); err == nil {
+			cmd := exec.Command("python3", "-m", "py_compile", absPath)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				errMsg := strings.TrimSpace(string(out))
+				if errMsg == "" {
+					errMsg = "Python syntax compilation failed"
+				}
+				return false, fmt.Sprintf("%s: %s", relPath, errMsg)
+			}
+		}
+	case ".js", ".mjs":
+		if _, err := exec.LookPath("node"); err == nil {
+			cmd := exec.Command("node", "--check", absPath)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				errMsg := strings.TrimSpace(string(out))
+				if errMsg == "" {
+					errMsg = "JavaScript syntax check failed"
+				}
+				return false, fmt.Sprintf("%s: %s", relPath, errMsg)
+			}
+		}
+	case ".json":
+		var v any
+		if err := json.Unmarshal(data, &v); err != nil {
+			return false, fmt.Sprintf("%s: invalid JSON: %v", relPath, err)
+		}
+	}
+	return true, ""
+}
+
+type preflightJSONResult struct {
+	Passed      bool     `json:"passed"`
+	ExitCode    int      `json:"exit_code"`
+	SyntaxErrors []string `json:"syntax_errors"`
+	Quarantined []string `json:"quarantined_files"`
+	Details     []string `json:"details"`
+}
+
+func runPreflight(repoRoot string, stagedOnly, jsonOutput bool) (int, string) {
+	var files []string
+	gitArgs := []string{"-C", repoRoot, "diff"}
+	if stagedOnly {
+		gitArgs = append(gitArgs, "--cached")
+	}
+	gitArgs = append(gitArgs, "--name-only")
+
+	out, err := exec.Command("git", gitArgs...).Output()
+	if err == nil {
+		for _, f := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if f = strings.TrimSpace(f); f != "" {
+				files = append(files, f)
+			}
 		}
 	}
 
-	maxC := 1
-	for _, c := range counts {
-		if c > maxC {
-			maxC = c
+	// Also inspect untracked files if not staged-only
+	if !stagedOnly {
+		untrackedOut, err := exec.Command("git", "-C", repoRoot, "ls-files", "--others", "--exclude-standard").Output()
+		if err == nil {
+			for _, f := range strings.Split(strings.TrimSpace(string(untrackedOut)), "\n") {
+				if f = strings.TrimSpace(f); f != "" {
+					files = append(files, f)
+				}
+			}
+		}
+	}
+
+	var syntaxErrors []string
+	var quarantinedFiles []string
+	var details []string
+
+	for _, rel := range files {
+		absPath := filepath.Join(repoRoot, rel)
+		if st, err := os.Stat(absPath); err != nil || st.IsDir() {
+			continue
+		}
+
+		// 1. Secret & High-Entropy Check
+		if hasSecret, reason := detectSecretsInFile(absPath); hasSecret {
+			quarantinedFiles = append(quarantinedFiles, rel)
+			details = append(details, reason)
+		}
+
+		// 2. Syntax Validation Check
+		if valid, errReason := validateFileSyntax(repoRoot, rel); !valid {
+			syntaxErrors = append(syntaxErrors, rel)
+			details = append(details, errReason)
+		}
+	}
+
+	exitCode := 0
+	if len(quarantinedFiles) > 0 {
+		exitCode = 3 // Secret detected
+	} else if len(syntaxErrors) > 0 {
+		exitCode = 2 // Syntax error
+	}
+
+	if jsonOutput {
+		res := preflightJSONResult{
+			Passed:       exitCode == 0,
+			ExitCode:     exitCode,
+			SyntaxErrors: syntaxErrors,
+			Quarantined:  quarantinedFiles,
+			Details:      details,
+		}
+		b, _ := json.MarshalIndent(res, "", "  ")
+		return exitCode, string(b)
+	}
+
+	if exitCode == 0 {
+		return 0, fmt.Sprintf("%s%s %sPre-flight verification passed (all files clean)%s", cGreen, iconCheck, cWhite, cReset)
+	}
+
+	var sb strings.Builder
+	if len(quarantinedFiles) > 0 {
+		sb.WriteString(fmt.Sprintf("%s%s %sQUARANTINED FILES (%d)%s\n", cRed, iconShield, cBold, len(quarantinedFiles), cReset))
+		for _, q := range quarantinedFiles {
+			sb.WriteString(fmt.Sprintf("  %s%s%s %s\n", cRed, iconCross, cReset, q))
+		}
+	}
+	if len(syntaxErrors) > 0 {
+		if sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(fmt.Sprintf("%s%s %sSYNTAX ERRORS DETECTED (%d)%s\n", cAmber, iconWarn, cBold, len(syntaxErrors), cReset))
+		for _, s := range syntaxErrors {
+			sb.WriteString(fmt.Sprintf("  %s%s%s %s\n", cAmber, iconCross, cReset, s))
+		}
+	}
+	for _, d := range details {
+		sb.WriteString(fmt.Sprintf("    %s%s %s%s\n", cSlate, iconChevron, d, cReset))
+	}
+	return exitCode, sb.String()
+}
+
+// ==============================================================================
+// 4. 7-Day Commit Velocity Sparkline Generator
+// ==============================================================================
+
+func generateSparkline(repoRoot string) string {
+	glyphs := [8]string{" ", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
+	now := time.Now()
+	counts := make([]int, 7)
+	maxC := 0
+	total7d := 0
+
+	for i := 6; i >= 0; i-- {
+		dayStart := time.Date(now.Year(), now.Month(), now.Day()-i, 0, 0, 0, 0, now.Location())
+		dayEnd := dayStart.Add(24 * time.Hour)
+		out, err := exec.Command("git", "-C", repoRoot, "rev-list", "--count",
+			"--since="+dayStart.Format(time.RFC3339),
+			"--until="+dayEnd.Format(time.RFC3339),
+			"HEAD").Output()
+		if err == nil {
+			c, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+			counts[6-i] = c
+			total7d += c
+			if c > maxC {
+				maxC = c
+			}
 		}
 	}
 
@@ -595,6 +980,8 @@ func generateSparkline(repoRoot string) string {
 	for _, c := range counts {
 		if c == 0 {
 			b.WriteString(cSlate + "·" + cReset)
+		} else if maxC == 0 {
+			b.WriteString(cGreen + glyphs[0] + cReset)
 		} else {
 			idx := (c * 7) / maxC
 			if idx > 7 {
@@ -608,7 +995,7 @@ func generateSparkline(repoRoot string) string {
 }
 
 // ==============================================================================
-// 4. Multi-Repository Fleet Scanner & Parallel Status Probe
+// 5. Multi-Repository Fleet Scanner & Parallel Status Probe
 // ==============================================================================
 
 func scanGitRepos(root string, maxDepth int) []string {
@@ -659,7 +1046,7 @@ type fleetRepoStatus struct {
 func printFleetStatusTable(fleetFile string) {
 	data, err := os.ReadFile(fleetFile)
 	if err != nil {
-		fmt.Printf("  %sNo fleet file found at %s%s\n", cAmber, fleetFile, cReset)
+		fmt.Printf("  %s%s No fleet file found at %s%s\n", cAmber, iconWarn, fleetFile, cReset)
 		return
 	}
 
@@ -684,7 +1071,7 @@ func printFleetStatusTable(fleetFile string) {
 	}
 
 	if len(paths) == 0 {
-		fmt.Printf("  %sNo repositories enrolled in %s. Run: syncalibur fleet add <path>%s\n", cAmber, fleetFile, cReset)
+		fmt.Printf("  %s%s No repositories enrolled in %s. Run: syncalibur fleet add <path>%s\n", cAmber, iconWarn, fleetFile, cReset)
 		return
 	}
 
@@ -700,7 +1087,7 @@ func printFleetStatusTable(fleetFile string) {
 	wg.Wait()
 
 	fmt.Printf("  %s╭────────────────────────────────────────────────────────────────────────────────────────╮%s\n", cGold, cReset)
-	fmt.Printf("  %s│%s  %s%s%-84s%s  %s│%s\n", cGold, cReset, cGold, cBold, fmt.Sprintf("◈  S Y N C A L I B U R   F L E E T   S T A T U S   (%d REPOSITORIES)", len(results)), cReset, cGold, cReset)
+	fmt.Printf("  %s│%s  %s%s%-84s%s  %s│%s\n", cGold, cReset, cGold, cBold, fmt.Sprintf("%s  S Y N C A L I B U R   F L E E T   S T A T U S   (%d REPOSITORIES)", iconDiamond, len(results)), cReset, cGold, cReset)
 	fmt.Printf("  %s╰────────────────────────────────────────────────────────────────────────────────────────╯%s\n", cGold, cReset)
 	fmt.Printf("    %s%-20s %-14s %-12s %-22s %-20s%s\n", cBold, "REPOSITORY", "DAEMON", "BRANCH", "SYNC STATE", "PATH", cReset)
 	fmt.Printf("    %s──────────────────────────────────────────────────────────────────────────────────────%s\n", cSlate, cReset)
@@ -711,14 +1098,14 @@ func printFleetStatusTable(fleetFile string) {
 		if home != "" && strings.HasPrefix(shortPath, home) {
 			shortPath = "~" + strings.TrimPrefix(shortPath, home)
 		}
-		rawSync := "✔ In Sync"
+		rawSync := iconCheck + " In Sync"
 		syncColor := cGreen
 		if r.Dirty > 0 || r.Unpushed > 0 {
-			rawSync = fmt.Sprintf("● %d dirty, %d unpushed", r.Dirty, r.Unpushed)
+			rawSync = fmt.Sprintf("%s %d dirty, %d unpushed", iconDot, r.Dirty, r.Unpushed)
 			syncColor = cAmber
 		}
 		stateColor := cSlate
-		if strings.HasPrefix(r.State, "●") {
+		if strings.HasPrefix(r.State, iconDot) {
 			stateColor = cGreen
 		}
 		fmt.Printf("    %s%-20s%s %s%-14s%s %s%-12s%s %s%-22s%s %s%s%s\n",
@@ -736,7 +1123,7 @@ func inspectRepoStatus(repoPath string) fleetRepoStatus {
 		Path:   repoPath,
 		Name:   filepath.Base(repoPath),
 		Branch: "main",
-		State:  "○ Idle",
+		State:  iconCircle + " Idle",
 	}
 	if bOut, err := exec.Command("git", "-C", repoPath, "symbolic-ref", "--quiet", "--short", "HEAD").Output(); err == nil {
 		st.Branch = strings.TrimSpace(string(bOut))
@@ -745,7 +1132,7 @@ func inspectRepoStatus(repoPath string) fleetRepoStatus {
 	if pBytes, err := os.ReadFile(pidFile); err == nil {
 		pidStr := strings.TrimSpace(string(pBytes))
 		if pid, err := strconv.Atoi(pidStr); err == nil && processAlive(pid) {
-			st.State = fmt.Sprintf("● PID %d", pid)
+			st.State = fmt.Sprintf("%s PID %d", iconDot, pid)
 		}
 	}
 	if sOut, err := exec.Command("git", "-C", repoPath, "status", "--porcelain", "-uall").Output(); err == nil {
@@ -773,7 +1160,7 @@ func truncateStr(s string, maxLen int) string {
 }
 
 // ==============================================================================
-// 5. First-Class Telegram Bot & Multi-Channel Webhook Dispatcher
+// 6. First-Class Telegram Bot & Multi-Channel Webhook Dispatcher
 // ==============================================================================
 
 func escapeTelegramHTML(s string) string {
@@ -786,44 +1173,35 @@ func escapeTelegramHTML(s string) string {
 }
 
 func formatTelegramHTMLMessage(eventType, repoName, branchName, hostInfo, title, message, details string) string {
-	badge := "◈"
+	badge := iconDiamond
 	switch eventType {
 	case "failure":
-		badge = "🚨"
+		badge = iconCross
 	case "recovery", "success":
-		badge = "✅"
-	case "summary", "test":
-		badge = "◈"
+		badge = iconCheck
+	case "test", "summary":
+		badge = iconSparkle
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "<b>%s %s</b>\n", badge, escapeTelegramHTML(title))
-	if strings.TrimSpace(message) != "" {
-		fmt.Fprintf(&b, "%s\n", escapeTelegramHTML(message))
-	}
-	fmt.Fprintf(&b, "\n<b>◈ Repository:</b> <code>%s (%s)</code>\n", escapeTelegramHTML(repoName), escapeTelegramHTML(branchName))
-	fmt.Fprintf(&b, "<b>◈ Host:</b> <code>%s</code>\n", escapeTelegramHTML(hostInfo))
-	fmt.Fprintf(&b, "<b>◈ Time:</b> <code>%s</code>", time.Now().Format("2006-01-02 15:04:05 MST"))
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("<b>%s %s</b>\n", badge, escapeTelegramHTML(title)))
+	sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n", escapeTelegramHTML(message)))
+	sb.WriteString(fmt.Sprintf("<b>Repository:</b> <code>%s</code>\n", escapeTelegramHTML(repoName)))
+	sb.WriteString(fmt.Sprintf("<b>Branch:</b> <code>%s</code>\n", escapeTelegramHTML(branchName)))
+	sb.WriteString(fmt.Sprintf("<b>Host:</b> <code>%s</code>\n", escapeTelegramHTML(hostInfo)))
+	sb.WriteString(fmt.Sprintf("<b>Time:</b> <code>%s</code>\n", time.Now().Format("2006-01-02 15:04:05 MST")))
 
 	if strings.TrimSpace(details) != "" {
-		trimmed := strings.TrimSpace(details)
-		if len(trimmed) > 1200 {
-			trimmed = trimmed[:1200] + "..."
+		if len(details) > 800 {
+			details = details[:800] + "\n... (truncated)"
 		}
-		fmt.Fprintf(&b, "\n\n<pre>%s</pre>", escapeTelegramHTML(trimmed))
+		sb.WriteString(fmt.Sprintf("\n<pre><b>Telemetry:</b>\n%s</pre>", escapeTelegramHTML(details)))
 	}
-	return b.String()
+
+	return sb.String()
 }
 
 func sendTelegramMessage(botToken, chatID, eventType, repoName, branchName, title, message, details string) error {
-	botToken = strings.TrimSpace(botToken)
-	chatID = strings.TrimSpace(chatID)
-	if botToken == "" || chatID == "" {
-		return nil
-	}
-	botToken = strings.TrimPrefix(botToken, "bot")
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
@@ -835,18 +1213,21 @@ func sendTelegramMessage(botToken, chatID, eventType, repoName, branchName, titl
 	hostInfo := fmt.Sprintf("%s@%s (%s/%s)", user, host, runtime.GOOS, runtime.GOARCH)
 
 	text := formatTelegramHTMLMessage(eventType, repoName, branchName, hostInfo, title, message, details)
+
 	payload := map[string]any{
 		"chat_id":                  chatID,
+		"text":                     text,
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": true,
-		"text":                     text,
 	}
 
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+
+	urlStr := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	req, err := http.NewRequestWithContext(ctx, "POST", urlStr, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
@@ -866,8 +1247,6 @@ func sendTelegramMessage(botToken, chatID, eventType, repoName, branchName, titl
 func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, details string) error {
 	var firstErr error
 
-	// Also dispatch to first-class Telegram Bot if SYNCALIBUR_TELEGRAM_BOT_TOKEN + SYNCALIBUR_TELEGRAM_CHAT_ID are set in env
-	// and webhookURL itself isn't already pointing to the same Telegram Bot endpoint
 	tgToken := strings.TrimSpace(os.Getenv("SYNCALIBUR_TELEGRAM_BOT_TOKEN"))
 	tgChat := strings.TrimSpace(os.Getenv("SYNCALIBUR_TELEGRAM_CHAT_ID"))
 	lowerURL := strings.ToLower(strings.TrimSpace(webhookURL))
@@ -1003,11 +1382,66 @@ func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, de
 }
 
 // ==============================================================================
-// 6. Interactive Live TUI Control Center (`syncalibur ui`)
+// 7. Two-Pane Interactive Live TUI with Scrollable Logs (`syncalibur ui`)
 // ==============================================================================
 
+func getTerminalSize() (int, int) {
+	out, err := exec.Command("stty", "size").Output()
+	if err == nil {
+		parts := strings.Fields(strings.TrimSpace(string(out)))
+		if len(parts) >= 2 {
+			r, err1 := strconv.Atoi(parts[0])
+			c, err2 := strconv.Atoi(parts[1])
+			if err1 == nil && err2 == nil && r > 0 && c > 0 {
+				return r, c
+			}
+		}
+	}
+	return 28, 100
+}
+
+func loadLogLines(logPath string, maxLines int) []string {
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(string(data), "\n")
+	var clean []string
+	for _, l := range lines {
+		l = strings.TrimRight(l, "\r")
+		if strings.TrimSpace(l) != "" {
+			clean = append(clean, l)
+		}
+	}
+	if len(clean) > maxLines {
+		clean = clean[len(clean)-maxLines:]
+	}
+	return clean
+}
+
+func formatLogLineForTUI(raw string, maxCols int) string {
+	// Format log line with Lucide minimalist icons
+	if strings.Contains(raw, "[SYNTAX HOLD]") {
+		raw = fmt.Sprintf("%s%s %s%s", cAmber, iconWarn, raw, cReset)
+	} else if strings.Contains(raw, "[SECRET SHIELD]") {
+		raw = fmt.Sprintf("%s%s %s%s", cRed, iconShield, raw, cReset)
+	} else if strings.Contains(raw, "Push succeeded") || strings.Contains(raw, "Committed") {
+		raw = fmt.Sprintf("%s%s %s%s", cGreen, iconCheck, raw, cReset)
+	} else if strings.Contains(raw, "Pushing") {
+		raw = fmt.Sprintf("%s%s %s%s", cGold, iconArrowUp, raw, cReset)
+	} else if strings.Contains(raw, "failed") || strings.Contains(raw, "error") {
+		raw = fmt.Sprintf("%s%s %s%s", cRed, iconCross, raw, cReset)
+	} else {
+		raw = fmt.Sprintf("%s%s %s%s", cSlate, iconChevron, raw, cReset)
+	}
+
+	if len(raw) > maxCols+20 { // account for ANSI escapes
+		return raw[:maxCols+20]
+	}
+	return raw
+}
+
 func runInteractiveTUI(scriptPath, repoRoot string) {
-	// Put terminal into raw single-char non-canonical mode via stty
 	sttyOrigOut, _ := exec.Command("stty", "-g").Output()
 	sttyOrig := strings.TrimSpace(string(sttyOrigOut))
 	_ = exec.Command("stty", "-icanon", "-echo", "min", "0", "time", "0").Run()
@@ -1030,18 +1464,19 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 		os.Exit(0)
 	}()
 
-	// Enter alternate screen buffer and hide cursor
 	fmt.Print("\033[?1049h\033[?25l")
 
-	keyCh := make(chan byte, 16)
+	keyCh := make(chan []byte, 16)
 	go func() {
-		buf := make([]byte, 1)
+		buf := make([]byte, 8)
 		for {
 			n, err := os.Stdin.Read(buf)
 			if err == nil && n > 0 {
-				keyCh <- buf[0]
+				cpy := make([]byte, n)
+				copy(cpy, buf[:n])
+				keyCh <- cpy
 			} else {
-				time.Sleep(40 * time.Millisecond)
+				time.Sleep(30 * time.Millisecond)
 			}
 		}
 	}()
@@ -1049,18 +1484,30 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 	var flashMsg string
 	var flashUntil time.Time
 	gitDir := filepath.Join(repoRoot, ".git")
+	logFile := filepath.Join(gitDir, "syncalibur.log")
+
+	scrollOffset := 0
+	followMode := true
 
 	renderFrame := func() {
+		termRows, termCols := getTerminalSize()
+		if termCols < 80 {
+			termCols = 80
+		}
+		if termRows < 24 {
+			termRows = 24
+		}
+
 		var frame strings.Builder
 		frame.WriteString("\033[H")
 
-		// Render main status dashboard from syncalibur.sh
+		// 1. Top Section: Status Dashboard
 		cmd := exec.Command("bash", scriptPath, "status", "--compact-ui")
 		cmd.Env = append(os.Environ(), "CLICOLOR_FORCE=1")
 		out, _ := cmd.Output()
 		frame.Write(out)
 
-		// Live Velocity & Sparkline Bar
+		// 2. Telemetry Banner
 		commitsTodayOut, _ := exec.Command("git", "-C", repoRoot, "rev-list", "--count", "--since=midnight", "HEAD").Output()
 		commitsToday := strings.TrimSpace(string(commitsTodayOut))
 		if commitsToday == "" {
@@ -1068,67 +1515,188 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 		}
 		spark := generateSparkline(repoRoot)
 
-		pauseState := cGreen + "▶ ACTIVE" + cReset
+		pauseState := cGreen + iconPlay + " ACTIVE" + cReset
 		if _, err := os.Stat(filepath.Join(gitDir, "syncalibur.pause")); err == nil {
-			pauseState = cAmber + cBold + "⏸ PAUSED BY USER" + cReset
+			pauseState = cAmber + cBold + iconPause + " PAUSED BY USER" + cReset
 		}
 
+		nowStr := time.Now().Format("15:04:05")
 		fmt.Fprintf(&frame, "  %s╭────────────────────────────────────────────────────────────────────────────────────────╮%s\n", cGold, cReset)
-		fmt.Fprintf(&frame, "  %s│%s  %s%sLIVE TELEMETRY COCKPIT (Go Engine)%s   •   Loop: %s   •   Today: %s%s commits%s  %s│%s\n",
-			cGold, cReset, cCyan, cBold, cReset, pauseState, cGreen, commitsToday, cReset, cGold, cReset)
-		fmt.Fprintf(&frame, "  %s│%s  %s◈ 7-Day Velocity :%s %s\n", cGold, cReset, cGold, cReset, spark)
+		fmt.Fprintf(&frame, "  %s│%s  %s%s%s LIVE TELEMETRY COCKPIT%s   •   Loop: %s   •   Today: %s%s commits%s   •   %s%s%s  %s│%s\n",
+			cGold, cReset, cCyan, cBold, iconDiamond, cReset, pauseState, cGreen, commitsToday, cReset, cSlate, nowStr, cReset, cGold, cReset)
+		fmt.Fprintf(&frame, "  %s│%s  %s%s 7-Day Velocity :%s %s\n", cGold, cReset, cGold, iconSparkle, cReset, spark)
+		fmt.Fprintf(&frame, "  %s│%s  %s%s Shields        :%s %s%s Syntax Pre-flight & Shannon Entropy Quarantining Active%s\n",
+			cGold, cReset, cGold, iconShield, cReset, cGreen, iconCheck, cReset)
+
 		if time.Now().Before(flashUntil) && flashMsg != "" {
 			fmt.Fprintf(&frame, "  %s│%s  %s\n", cGold, cReset, flashMsg)
 		} else {
-			fmt.Fprintf(&frame, "  %s│%s  %sHotkeys:%s %s[p]%s Pause/Resume  %s[s]%s Force Sync  %s[b]%s Bidirectional Pull  %s[u]%s Self-Update  %s[d]%s Doctor  %s[q]%s Quit\n",
-				cGold, cReset, cBold, cReset, cGold, cReset, cGold, cReset, cGold, cReset, cGold, cReset, cGold, cReset, cRed, cReset)
+			fmt.Fprintf(&frame, "  %s│%s  %sHotkeys:%s %s[p]%s Pause  %s[s]%s Sync  %s[b]%s Pull  %s[↑/↓]%s Scroll  %s[f]%s Follow  %s[d]%s Doctor  %s[q]%s Quit\n",
+				cGold, cReset, cBold, cReset, cGold, cReset, cGold, cReset, cGold, cReset, cCyan, cReset, cCyan, cReset, cGold, cReset, cRed, cReset)
 		}
-		fmt.Fprintf(&frame, "  %s╰────────────────────────────────────────────────────────────────────────────────────────╯%s\033[J\n", cGold, cReset)
+		fmt.Fprintf(&frame, "  %s╰────────────────────────────────────────────────────────────────────────────────────────╯%s\n", cGold, cReset)
 
+		// 3. Scrollable Logs Viewport
+		allLogs := loadLogLines(logFile, 500)
+		totalLogs := len(allLogs)
+
+		// Calculate available rows for log viewport
+		renderedTopRows := strings.Count(frame.String(), "\n")
+		logRows := termRows - renderedTopRows - 2
+		if logRows < 4 {
+			logRows = 4
+		}
+
+		maxScroll := 0
+		if totalLogs > logRows {
+			maxScroll = totalLogs - logRows
+		}
+		if followMode {
+			scrollOffset = 0
+		}
+		if scrollOffset > maxScroll {
+			scrollOffset = maxScroll
+		}
+		if scrollOffset < 0 {
+			scrollOffset = 0
+		}
+
+		followBadge := fmt.Sprintf("%s%s FOLLOW: ON%s", cGreen, iconCheck, cReset)
+		if !followMode {
+			followBadge = fmt.Sprintf("%s%s SCROLLED ↑ %d (press [f] to follow)%s", cAmber, iconWarn, scrollOffset, cReset)
+		}
+
+		fmt.Fprintf(&frame, "  %s%s%s LIVE LOG VIEWPORT%s  %s(%d lines • %s)%s\n",
+			cBold, cCyan, iconChevron, cReset, cSlate, totalLogs, followBadge, cReset)
+		fmt.Fprintf(&frame, "  %s────────────────────────────────────────────────────────────────────────────────────────%s\n", cSlate, cReset)
+
+		if totalLogs == 0 {
+			fmt.Fprintf(&frame, "    %s%s Waiting for first activity log in %s...%s\n", cSlate, iconCircle, logFile, cReset)
+		} else {
+			endIdx := totalLogs - scrollOffset
+			startIdx := endIdx - logRows
+			if startIdx < 0 {
+				startIdx = 0
+			}
+			for i := startIdx; i < endIdx && i < totalLogs; i++ {
+				fmt.Fprintf(&frame, "  %s\n", formatLogLineForTUI(allLogs[i], termCols-4))
+			}
+		}
+
+		frame.WriteString("\033[J")
 		fmt.Print(frame.String())
 	}
 
 	renderFrame()
-	ticker := time.NewTicker(1500 * time.Millisecond)
+	ticker := time.NewTicker(1000 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case k := <-keyCh:
-			switch k {
-			case 'q', 'Q', 3: // q or Ctrl+C
+		case keys := <-keyCh:
+			if len(keys) == 0 {
+				continue
+			}
+
+			// Check ANSI escape sequences
+			if len(keys) >= 3 && keys[0] == 27 && keys[1] == '[' {
+				switch keys[2] {
+				case 'A': // Arrow Up
+					scrollOffset++
+					followMode = false
+					renderFrame()
+					continue
+				case 'B': // Arrow Down
+					if scrollOffset > 0 {
+						scrollOffset--
+						if scrollOffset == 0 {
+							followMode = true
+						}
+					}
+					renderFrame()
+					continue
+				case '5': // Page Up
+					scrollOffset += 10
+					followMode = false
+					renderFrame()
+					continue
+				case '6': // Page Down
+					scrollOffset -= 10
+					if scrollOffset <= 0 {
+						scrollOffset = 0
+						followMode = true
+					}
+					renderFrame()
+					continue
+				case 'H', '1': // Home
+					scrollOffset = 9999
+					followMode = false
+					renderFrame()
+					continue
+				case 'F', '4': // End
+					scrollOffset = 0
+					followMode = true
+					renderFrame()
+					continue
+				}
+			}
+
+			// Single keys
+			switch keys[0] {
+			case 'q', 'Q', 3, 27: // q, Q, Ctrl+C, Esc
 				return
+			case 'k', 'K': // vim scroll up
+				scrollOffset++
+				followMode = false
+				renderFrame()
+			case 'j', 'J': // vim scroll down
+				if scrollOffset > 0 {
+					scrollOffset--
+					if scrollOffset == 0 {
+						followMode = true
+					}
+				}
+				renderFrame()
+			case 'f', 'F', 'G': // follow mode
+				scrollOffset = 0
+				followMode = true
+				renderFrame()
+			case 'g': // top
+				scrollOffset = 9999
+				followMode = false
+				renderFrame()
 			case 'p', 'P':
 				pauseFile := filepath.Join(gitDir, "syncalibur.pause")
 				if _, err := os.Stat(pauseFile); err == nil {
 					_ = os.Remove(pauseFile)
-					flashMsg = cGreen + cBold + "▶ RESUMED: " + cReset + "Autonomous sync loop resumed."
+					flashMsg = fmt.Sprintf("%s%s %sRESUMED:%s Autonomous sync loop resumed.", cGreen, iconPlay, cBold, cReset)
 				} else {
 					_ = os.WriteFile(pauseFile, []byte("1\n"), 0644)
-					flashMsg = cAmber + cBold + "⏸ PAUSED: " + cReset + "Daemon paused. Press [p] again to resume."
+					flashMsg = fmt.Sprintf("%s%s %sPAUSED:%s Daemon paused. Press [p] again to resume.", cAmber, iconPause, cBold, cReset)
 				}
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
 			case 's', 'S':
 				_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.sync"), []byte("1\n"), 0644)
-				flashMsg = cCyan + cBold + "⚡ SYNC NOW: " + cReset + "Immediate commit & push cycle triggered!"
+				flashMsg = fmt.Sprintf("%s%s %sSYNC NOW:%s Immediate commit & push triggered!", cCyan, iconZap, cBold, cReset)
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
 			case 'b', 'B':
 				_ = exec.Command("bash", scriptPath, "pull").Run()
-				flashMsg = cCyan + cBold + "🔀 BIDIRECTIONAL PULL: " + cReset + "Checked upstream remote and rebased cleanly."
+				flashMsg = fmt.Sprintf("%s%s %sBIDIRECTIONAL PULL:%s Checked upstream & rebased cleanly.", cCyan, iconSync, cBold, cReset)
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
 			case 'u', 'U':
 				_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.upd"), []byte("1\n"), 0644)
-				flashMsg = cGold + cBold + "⟳ SELF-UPDATE: " + cReset + "Triggered Syncalibur upstream self-update check."
+				flashMsg = fmt.Sprintf("%s%s %sSELF-UPDATE:%s Upstream self-update check triggered.", cGold, iconSync, cBold, cReset)
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
 			case 'd', 'D':
-				flashMsg = cGreen + cBold + "🩺 DOCTOR: " + cReset + "Running health check..."
+				flashMsg = fmt.Sprintf("%s%s %sDOCTOR:%s Running 10-point diagnostic check...", cGreen, iconDoctor, cBold, cReset)
 				flashUntil = time.Now().Add(2 * time.Second)
 				renderFrame()
 			}
+
 		case <-ticker.C:
 			renderFrame()
 		}
