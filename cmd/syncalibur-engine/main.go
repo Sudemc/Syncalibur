@@ -471,9 +471,14 @@ func tryAICommitMessage(repoRoot string) string {
 		diffOut = diffOut[:1600]
 	}
 
+	model := strings.TrimSpace(os.Getenv("SYNCALIBUR_OLLAMA_MODEL"))
+	if model == "" {
+		model = "qwen2.5-coder:1.5b"
+	}
+
 	prompt := fmt.Sprintf("Write a single-line Conventional Commit message (max 65 chars, format: type(scope): summary) for this git diff:\n%s\n%s", string(statOut), string(diffOut))
 	reqBody, _ := json.Marshal(map[string]any{
-		"model":  "qwen2.5-coder:1.5b",
+		"model":  model,
 		"prompt": prompt,
 		"stream": false,
 	})
@@ -717,18 +722,124 @@ func truncateStr(s string, maxLen int) string {
 }
 
 // ==============================================================================
-// 5. Multi-Channel Webhook Dispatcher (Discord, Slack, Telegram & Generic JSON)
+// 5. First-Class Telegram Bot & Multi-Channel Webhook Dispatcher
 // ==============================================================================
 
-func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, details string) error {
-	if strings.TrimSpace(webhookURL) == "" {
+func escapeTelegramHTML(s string) string {
+	r := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+	)
+	return r.Replace(s)
+}
+
+func formatTelegramHTMLMessage(eventType, repoName, branchName, hostInfo, title, message, details string) string {
+	badge := "⚔️"
+	switch eventType {
+	case "failure":
+		badge = "🚨"
+	case "recovery", "success":
+		badge = "✅"
+	case "summary", "test":
+		badge = "⚔️"
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "<b>%s %s</b>\n", badge, escapeTelegramHTML(title))
+	if strings.TrimSpace(message) != "" {
+		fmt.Fprintf(&b, "%s\n", escapeTelegramHTML(message))
+	}
+	fmt.Fprintf(&b, "\n<b>◈ Repository:</b> <code>%s (%s)</code>\n", escapeTelegramHTML(repoName), escapeTelegramHTML(branchName))
+	fmt.Fprintf(&b, "<b>◈ Host:</b> <code>%s</code>\n", escapeTelegramHTML(hostInfo))
+	fmt.Fprintf(&b, "<b>◈ Time:</b> <code>%s</code>", time.Now().Format("2006-01-02 15:04:05 MST"))
+
+	if strings.TrimSpace(details) != "" {
+		trimmed := strings.TrimSpace(details)
+		if len(trimmed) > 1200 {
+			trimmed = trimmed[:1200] + "..."
+		}
+		fmt.Fprintf(&b, "\n\n<pre>%s</pre>", escapeTelegramHTML(trimmed))
+	}
+	return b.String()
+}
+
+func sendTelegramMessage(botToken, chatID, eventType, repoName, branchName, title, message, details string) error {
+	botToken = strings.TrimSpace(botToken)
+	chatID = strings.TrimSpace(chatID)
+	if botToken == "" || chatID == "" {
 		return nil
 	}
+	botToken = strings.TrimPrefix(botToken, "bot")
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
 	host, _ := os.Hostname()
-	hostInfo := fmt.Sprintf("%s@%s (%s/%s)", os.Getenv("USER"), host, runtime.GOOS, runtime.GOARCH)
+	user := os.Getenv("USER")
+	if user == "" {
+		user = "user"
+	}
+	hostInfo := fmt.Sprintf("%s@%s (%s/%s)", user, host, runtime.GOOS, runtime.GOARCH)
+
+	text := formatTelegramHTMLMessage(eventType, repoName, branchName, hostInfo, title, message, details)
+	payload := map[string]any{
+		"chat_id":                  chatID,
+		"parse_mode":               "HTML",
+		"disable_web_page_preview": true,
+		"text":                     text,
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("telegram API HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+	}
+	return nil
+}
+
+func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, details string) error {
+	var firstErr error
+
+	// Also dispatch to first-class Telegram Bot if SYNCALIBUR_TELEGRAM_BOT_TOKEN + SYNCALIBUR_TELEGRAM_CHAT_ID are set in env
+	// and webhookURL itself isn't already pointing to the same Telegram Bot endpoint
+	tgToken := strings.TrimSpace(os.Getenv("SYNCALIBUR_TELEGRAM_BOT_TOKEN"))
+	tgChat := strings.TrimSpace(os.Getenv("SYNCALIBUR_TELEGRAM_CHAT_ID"))
+	lowerURL := strings.ToLower(strings.TrimSpace(webhookURL))
+
+	if tgToken != "" && tgChat != "" && !strings.Contains(lowerURL, "api.telegram.org/bot") {
+		if err := sendTelegramMessage(tgToken, tgChat, eventType, repoName, branchName, title, message, details); err != nil {
+			firstErr = err
+		}
+	}
+
+	if strings.TrimSpace(webhookURL) == "" {
+		return firstErr
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	host, _ := os.Hostname()
+	user := os.Getenv("USER")
+	if user == "" {
+		user = "user"
+	}
+	hostInfo := fmt.Sprintf("%s@%s (%s/%s)", user, host, runtime.GOOS, runtime.GOARCH)
 	nowISO := time.Now().UTC().Format(time.RFC3339)
 
 	colorDec := 16494372
@@ -737,21 +848,28 @@ func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, de
 	case "failure":
 		colorDec = 16259441
 		colorHex = "#f87171"
-	case "recovery":
+	case "recovery", "success":
 		colorDec = 3461465
 		colorHex = "#34d399"
-	case "summary":
+	case "summary", "test":
 		colorDec = 3718584
 		colorHex = "#38bdf8"
 	}
 
 	var payload any
-	lowerURL := strings.ToLower(webhookURL)
 
 	switch {
 	case strings.Contains(lowerURL, "discord.com/api/webhooks/") || strings.Contains(lowerURL, "discordapp.com/api/webhooks/"):
 		if len(details) > 900 {
 			details = details[:900] + "..."
+		}
+		fields := []map[string]any{
+			{"name": "Repository", "value": "`" + repoName + "`", "inline": true},
+			{"name": "Branch", "value": "`" + branchName + "`", "inline": true},
+			{"name": "Host", "value": "`" + hostInfo + "`", "inline": true},
+		}
+		if strings.TrimSpace(details) != "" {
+			fields = append(fields, map[string]any{"name": "Telemetry", "value": "```text\n" + details + "\n```", "inline": false})
 		}
 		payload = map[string]any{
 			"username":   "Syncalibur Daemon",
@@ -761,36 +879,43 @@ func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, de
 					"title":       title,
 					"description": message,
 					"color":       colorDec,
-					"fields": []map[string]any{
-						{"name": "Repository", "value": "`" + repoName + "`", "inline": true},
-						{"name": "Branch", "value": "`" + branchName + "`", "inline": true},
-						{"name": "Host", "value": "`" + hostInfo + "`", "inline": true},
-						{"name": "Telemetry", "value": "```text\n" + details + "\n```", "inline": false},
-					},
-					"footer":    map[string]string{"text": "Syncalibur Autonomous Git Daemon (Go Engine)"},
-					"timestamp": nowISO,
+					"fields":      fields,
+					"footer":      map[string]string{"text": "Syncalibur Autonomous Git Daemon (Go Engine)"},
+					"timestamp":   nowISO,
 				},
 			},
 		}
 	case strings.Contains(lowerURL, "hooks.slack.com/services/"):
+		attText := fmt.Sprintf("%s\n*Repo:* `%s` (%s) • *Host:* `%s`", message, repoName, branchName, hostInfo)
+		if strings.TrimSpace(details) != "" {
+			attText += fmt.Sprintf("\n```%s```", details)
+		}
 		payload = map[string]any{
 			"text": "*" + title + "*",
 			"attachments": []map[string]any{
 				{
 					"color": colorHex,
-					"text":  fmt.Sprintf("%s\n*Repo:* `%s` (%s) • *Host:* `%s`\n```%s```", message, repoName, branchName, hostInfo, details),
+					"text":  attText,
 				},
 			},
 		}
 	case strings.Contains(lowerURL, "api.telegram.org/bot"):
-		text := fmt.Sprintf("<b>%s</b>\n%s\n\n<b>Repo:</b> <code>%s (%s)</code>\n<b>Host:</b> <code>%s</code>", title, message, repoName, branchName, hostInfo)
-		if details != "" {
-			text += fmt.Sprintf("\n<pre>%s</pre>", details)
+		chatID := tgChat
+		if parsedURL, err := url.Parse(webhookURL); err == nil {
+			if qChat := parsedURL.Query().Get("chat_id"); qChat != "" {
+				chatID = qChat
+			}
 		}
-		payload = map[string]any{
-			"parse_mode": "HTML",
-			"text":       text,
+		text := formatTelegramHTMLMessage(eventType, repoName, branchName, hostInfo, title, message, details)
+		tgMap := map[string]any{
+			"parse_mode":               "HTML",
+			"disable_web_page_preview": true,
+			"text":                     text,
 		}
+		if chatID != "" {
+			tgMap["chat_id"] = chatID
+		}
+		payload = tgMap
 	default:
 		payload = map[string]any{
 			"service":    "syncalibur",
@@ -819,7 +944,11 @@ func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, de
 		return err
 	}
 	defer resp.Body.Close()
-	return nil
+	if resp.StatusCode >= 400 {
+		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("webhook HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+	}
+	return firstErr
 }
 
 // ==============================================================================
