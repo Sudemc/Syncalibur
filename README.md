@@ -12,7 +12,7 @@
 [![Git Remotes](https://img.shields.io/badge/Multi--Remote-GitHub%20%2B%20GitLab%20%2B%20Self--Hosted-10b981?style=for-the-badge)](#what-is-syncalibur)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Protected%20Main%20%7C%201%20Review%20Required-a855f7?style=for-the-badge)](CONTRIBUTING.md)
 
-*Forge-grade background synchronization for your repositories — powered by a compiled Go core (`syncalibur-engine`) for sub-millisecond TrueColor terminal emblem rendering, Semantic Conventional Commit generation, concurrent Multi-Repo Fleet orchestration, Telegram & Multi-Channel Webhooks, and an Interactive Live TUI Cockpit.*
+*Forge-grade background synchronization for your repositories — powered by a compiled Go core (`syncalibur-engine`) , Semantic Conventional Commit generation, concurrent Multi-Repo Fleet orchestration, Telegram & Multi-Channel Webhooks, and an Interactive Live TUI Cockpit.*
 
 </div>
 
