@@ -3156,9 +3156,16 @@ cmd_logs() {
 usage() {
   print_syncalibur_dashboard
   cat << EOF
-  ${C_GOLD}${C_BOLD}Usage:${C_RESET} syncalibur ${C_CYAN}{install [path]|uninstall|start|stop|restart|status|logs|ui|fleet|doctor|notify|pr|pull|pause|resume|alert|run}${C_RESET}
+  ${C_GOLD}${C_BOLD}Usage:${C_RESET} syncalibur ${C_CYAN}{push|commit|check|tidy|hook|install|status|ui|fleet|doctor|logs|...}${C_RESET}
 
-  ${C_GOLD}${C_BOLD}Commands:${C_RESET}
+  ${C_GOLD}${C_BOLD}Developer Push Ergonomics & Safety:${C_RESET}
+    ${C_CYAN}push [msg] [--tidy]${C_RESET}    One-shot preflight check, commit & multi-remote push (<1.5s)
+    ${C_CYAN}commit [msg]${C_RESET}           Local preflight check & commit (skips network push)
+    ${C_CYAN}check | preflight${C_RESET}     Run pre-push inspection (syntax hold, secret shield, diff, proposed msg)
+    ${C_CYAN}tidy${C_RESET}                    Squash unpushed local micro-commits into 1 clean conventional commit
+    ${C_CYAN}hook <install|status>${C_RESET}  Install universal pre-commit & prepare-commit-msg Git hooks
+
+  ${C_GOLD}${C_BOLD}Autonomous Daemon & Fleet Control:${C_RESET}
     ${C_CYAN}install [path]${C_RESET}         Configure OS auto-start, compile Go engine, link global CLI & start now
     ${C_CYAN}ui${C_RESET}                     Launch interactive live TUI cockpit (7-day sparkline + hotkeys [p/s/b/u/d/q])
     ${C_CYAN}status${C_RESET}                 Show TrueColor emblem, live dashboard, velocity sparkline & recent logs
@@ -3177,6 +3184,11 @@ EOF
 }
 
 case "${1:-}" in
+  push)       shift; cmd_push "$@" ;;
+  commit)     shift; cmd_commit "$@" ;;
+  check | preflight) shift; cmd_check "${1:-}" ;;
+  tidy)       shift; cmd_tidy "${1:-}" ;;
+  hook)       shift; cmd_hook "${2:-status}" ;;
   install)    cmd_install "${2:-}" ;;
   uninstall)  cmd_uninstall ;;
   start)      cmd_start ;;
