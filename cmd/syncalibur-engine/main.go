@@ -773,7 +773,7 @@ func detectSecretsInFile(filePath string) (bool, string) {
 		}
 
 		for _, re := range knownSecretRegexes {
-			if m := re.FindString(trimmed); m != nil {
+			if m := re.FindString(trimmed); m != "" {
 				return true, fmt.Sprintf("%s:%d (matches known credential signature)", filepath.Base(filePath), lineNum+1)
 			}
 		}
