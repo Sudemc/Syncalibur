@@ -1388,7 +1388,10 @@ safe_bidirectional_sync() {
 render_auto_pr_body() {
   local repo_dir="$1" base_branch="$2" head_branch="$3" pr_title="$4" trigger_reason="${5:-Protected Branch Auto-PR (\`GH006\`)}"
   local diff_range="refs/remotes/origin/${base_branch}..HEAD"
-  if ! git -C "${repo_dir}" rev-parse --verify "refs/remotes/origin/${base_branch}" >/dev/null 2>&1; then
+  local head_sha base_sha
+  head_sha="$(git -C "${repo_dir}" rev-parse -q --verify HEAD 2>/dev/null || echo "")"
+  base_sha="$(git -C "${repo_dir}" rev-parse -q --verify "refs/remotes/origin/${base_branch}" 2>/dev/null || echo "")"
+  if [[ -z "${base_sha}" || "${head_sha}" == "${base_sha}" ]]; then
     diff_range="HEAD~1..HEAD"
   fi
 
