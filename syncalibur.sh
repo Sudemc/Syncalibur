@@ -872,14 +872,31 @@ describe_notify_channels() {
   fi
 }
 
+daemon_resource_badge() {
+  local pid="$1"
+  [[ -n "${pid}" ]] || return 0
+  local ps_line cpu_pct mem_pct rss_kb rss_mb comm_name
+  ps_line="$(ps -p "${pid}" -o %cpu=,%mem=,rss=,comm= 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${ps_line}" ]]; then
+    read -r cpu_pct mem_pct rss_kb comm_name <<< "${ps_line}"
+    if [[ "${rss_kb:-0}" =~ ^[0-9]+$ ]] && (( rss_kb > 0 )); then
+      rss_mb="$(awk -v kb="${rss_kb}" 'BEGIN { printf "%.1f", kb / 1024.0 }')"
+      printf '%s[%s • CPU %s%% • RAM %s MB]%s' "${C_SLATE}" "${comm_name:-syncalibur}" "${cpu_pct:-0.0}" "${rss_mb}" "${C_RESET}"
+      return 0
+    fi
+  fi
+  return 0
+}
+
 print_syncalibur_dashboard() {
   ensure_logo_ansi
 
-  local pid state_str autostart_str branch remote unpushed_str cfg_short watch_short self_str engine_badge
+  local pid state_str autostart_str branch remote unpushed_str cfg_short watch_short self_str engine_badge res_badge=""
   if [[ -f "${PAUSE_FILE}" ]]; then
     state_str="${C_AMBER}${C_BOLD}⏸ PAUSED${C_RESET} ${C_SLATE}(resume via 'syncalibur resume' or [p] in UI)${C_RESET}"
   elif pid="$(daemon_pid)"; then
-    state_str="${C_GREEN}${C_BOLD}● ONLINE${C_RESET} ${C_SLATE}(PID ${pid})${C_RESET}"
+    res_badge="$(daemon_resource_badge "${pid}")"
+    state_str="${C_GREEN}${C_BOLD}● ONLINE${C_RESET} ${C_SLATE}(PID ${pid})${C_RESET} ${res_badge}"
   else
     state_str="${C_RED}${C_BOLD}○ OFFLINE${C_RESET}"
   fi
