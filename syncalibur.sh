@@ -142,21 +142,32 @@ SCRIPT_DIR="$(dirname "${SCRIPT_PATH}")"
 LOGO_ANSI_FILE="${SCRIPT_DIR}/assets/syncalibur-logo.ansi"
 LOGO_PNG_FILE="${SCRIPT_DIR}/assets/syncalibur-logo.png"
 GO_ENGINE_SRC="${SCRIPT_DIR}/cmd/syncalibur-engine/main.go"
-GO_ENGINE_BIN="${SCRIPT_DIR}/bin/syncalibur-engine"
-[[ "${OS_KERNEL}" =~ ^(MINGW|MSYS|CYGWIN) ]] && GO_ENGINE_BIN="${GO_ENGINE_BIN}.exe"
+GO_ENGINE_BIN="${SCRIPT_DIR}/bin/syncalibur"
+GO_ENGINE_COMPAT_BIN="${SCRIPT_DIR}/bin/syncalibur-engine"
+if [[ "${OS_KERNEL}" =~ ^(MINGW|MSYS|CYGWIN) ]]; then
+  GO_ENGINE_BIN="${GO_ENGINE_BIN}.exe"
+  GO_ENGINE_COMPAT_BIN="${GO_ENGINE_COMPAT_BIN}.exe"
+fi
 FLEET_LIST_FILE="${SYNCALIBUR_FLEET_LIST:-${SCRIPT_DIR}/repos.list}"
 SELF_REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel 2>/dev/null || echo "")"
 
-# Ensure the native Go engine binary is compiled and up to date when `go` is available
+# Ensure the native Go binary (`bin/syncalibur`, which registers as `syncalibur` in top/htop/ps/Task Manager) is compiled and up to date
 ensure_go_engine() {
   if [[ -x "${GO_ENGINE_BIN}" ]]; then
     if [[ ! -f "${GO_ENGINE_SRC}" ]] || (( $(file_mtime_epoch "${GO_ENGINE_BIN}") >= $(file_mtime_epoch "${GO_ENGINE_SRC}") )); then
+      [[ -e "${GO_ENGINE_COMPAT_BIN}" ]] || ln -sf "syncalibur" "${GO_ENGINE_COMPAT_BIN}" 2>/dev/null || cp -f "${GO_ENGINE_BIN}" "${GO_ENGINE_COMPAT_BIN}" 2>/dev/null || true
       return 0
     fi
   fi
   if command -v go >/dev/null 2>&1 && [[ -f "${GO_ENGINE_SRC}" ]]; then
     mkdir -p "$(dirname "${GO_ENGINE_BIN}")" 2>/dev/null || true
-    (cd "${SCRIPT_DIR}" && go build -ldflags="-s -w" -o "${GO_ENGINE_BIN}" ./cmd/syncalibur-engine 2>/dev/null) && return 0
+    if (cd "${SCRIPT_DIR}" && go build -ldflags="-s -w" -o "${GO_ENGINE_BIN}" ./cmd/syncalibur-engine 2>/dev/null); then
+      ln -sf "syncalibur" "${GO_ENGINE_COMPAT_BIN}" 2>/dev/null || cp -f "${GO_ENGINE_BIN}" "${GO_ENGINE_COMPAT_BIN}" 2>/dev/null || true
+      return 0
+    fi
+  fi
+  if [[ ! -x "${GO_ENGINE_BIN}" && -x "${GO_ENGINE_COMPAT_BIN}" ]]; then
+    cp -f "${GO_ENGINE_COMPAT_BIN}" "${GO_ENGINE_BIN}" 2>/dev/null || true
   fi
   [[ -x "${GO_ENGINE_BIN}" ]]
 }
