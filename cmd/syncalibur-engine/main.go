@@ -838,6 +838,17 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 		if err := json.Unmarshal(data, &v); err != nil {
 			return false, fmt.Sprintf("%s: invalid JSON: %v", relPath, err)
 		}
+	case ".sh", ".bash":
+		if _, err := exec.LookPath("bash"); err == nil {
+			cmd := exec.Command("bash", "-n", absPath)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				errMsg := strings.TrimSpace(string(out))
+				if errMsg == "" {
+					errMsg = "Shell script syntax validation failed"
+				}
+				return false, fmt.Sprintf("%s: %s", relPath, errMsg)
+			}
+		}
 	}
 	return true, ""
 }
