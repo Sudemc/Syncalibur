@@ -108,12 +108,11 @@ flowchart TD
    [2] Bidirectional Rebase Check  ──► Fetches remote; runs 'git pull --rebase --autostash'
             │                          (Auto-aborts & pops open Alert Terminal on conflict)
             ▼
-   [3] Pre-Staging Safety Shield   ──► Skips files > 50 MiB & blocks .env / *.pem / *.key / *.tfstate
-            │
+   [3] Pre-Staging Safety Shield   ──► Syntax Pre-flight (Go/Python/JS/JSON) & Shannon Entropy Secret Shield
+            │                          (Holds broken syntax ticks & quarantines high-entropy secrets)
             ▼
-   [4] Go Engine Semantic Commit   ──► Analyzes diff stats -> "feat(scope): update X (+42/-7)"
+   [4] Go Engine AST Commit        ──► Inspects AST/hunks -> "feat(main): update myFunc() (+42/-7)"
             │
-            ▼
    [5] Multi-Remote Push & Alert   ──► Pushes to GitHub + GitLab -> Dispatches Telegram / Webhook
 ```
 
@@ -123,7 +122,7 @@ flowchart TD
 
 | Command | Description |
 | :--- | :--- |
-| `syncalibur ui` | Launch the **Interactive Full-Screen Live TUI Cockpit** (`[p]` Pause, `[s]` Sync, `[b]` Pull, `[u]` Update, `[d]` Doctor, `[q]` Quit) |
+| `syncalibur ui` | Launch the **Interactive Two-Pane Live TUI Cockpit** (Live Top Telemetry + Scrollable Bottom Viewport with `[↑/↓]`, `[j/k]`, `[PageUp/Down]`, `[f]` Follow, `[p]` Pause, `[s]` Sync, `[b]` Pull, `[d]` Doctor, `[q]` Quit) |
 | `syncalibur install [PATH]` | Auto-detect repo, create missing remote repo if needed, link `~/.local/bin/syncalibur`, and start the OS service |
 | `syncalibur status` | Render the TrueColor emblem, 7-day commit sparkline, remote matrix, and recent events |
 | `syncalibur logs` | Render the emblem header and stream live color-coded log events (`tail -f`) |
@@ -131,7 +130,7 @@ flowchart TD
 | `syncalibur pull` | Trigger an immediate safe bidirectional pull (`git pull --rebase --autostash`) |
 | `syncalibur pause` / `resume` | Temporarily pause or resume background auto-commits without uninstalling the service |
 | `syncalibur notify [MSG]` | Send an instant test notification to your configured **Telegram Bot** (`syncalibur telegram-test`) and Webhook |
-| `syncalibur doctor` | Run the 10-point diagnostic health check (Git, Go Engine, inotify, SSH, `gh`/`glab`, remotes) |
+| `syncalibur doctor` | Run the 11-point diagnostic health check (Git, Go Engine, inotify, SSH, `gh`/`glab`, remotes, Syntax & Secret Shield) |
 | `syncalibur fleet status` | Display a concurrent status table of all repositories in `repos.list` |
 | `syncalibur fleet scan [DIR]` | Recursively scan a directory for Git repositories using Go goroutines and append them to `repos.list` |
 | `syncalibur fleet start` | Spawn background Syncalibur daemons for every active repository in `repos.list` |
