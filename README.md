@@ -131,6 +131,19 @@ flowchart TD
 
 ## CLI Command Reference
 
+### Developer Push Ergonomics & Universal Safety
+
+| Command | Description |
+| :--- | :--- |
+| `syncalibur push [MSG] [--tidy]` | **One-Shot Push:** Runs preflight syntax & secret check, generates AST conventional commit (or uses custom msg), pulls safely, and pushes immediately to all remotes (<1.5s) |
+| `syncalibur commit [MSG]` | **Local Safe Commit:** Preflight checks & commit without network push (perfect for offline coding) |
+| `syncalibur check` / `preflight` | **Pre-Push Inspection:** Inspects working tree, tests Syntax Hold & Secret Shield, shows proposed AST commit message, and prints sync matrix |
+| `syncalibur tidy` | **History Hygiene (Smart Squash):** Squashes unpushed local micro-commits into a single clean AST-driven Conventional Commit with automatic rollback checkpoint (`refs/syncalibur/backup-HEAD-...`) |
+| `syncalibur hook install` | **Universal Git Hook:** Installs `.git/hooks/pre-commit` (Secret Shield & Syntax Hold) and `.git/hooks/prepare-commit-msg` (AST suggestions) so standard `git commit` commands outside Syncalibur are guarded |
+| `syncalibur hook status` / `uninstall` | Check active Git hook status or uninstall Syncalibur Git hooks cleanly |
+
+### Autonomous Daemon & Fleet Cockpit
+
 | Command | Description |
 | :--- | :--- |
 | `syncalibur ui` | Launch the **Interactive Two-Pane Live TUI Cockpit** (Live Top Telemetry + Scrollable Bottom Viewport with `[↑/↓]`, `[j/k]`, `[PageUp/Down]`, `[f]` Follow, `[p]` Pause, `[s]` Sync, `[b]` Pull, `[d]` Doctor, `[q]` Quit) |
@@ -146,7 +159,6 @@ flowchart TD
 | `syncalibur fleet scan [DIR]` | Recursively scan a directory for Git repositories using Go goroutines and append them to `repos.list` |
 | `syncalibur fleet start` | Spawn background Syncalibur daemons for every active repository in `repos.list` |
 | `syncalibur fleet stop` | Stop all background fleet daemons |
-| `syncalibur self-update` | Immediately check Syncalibur's own repository for updates, rebuild the Go engine, and reload |
 | `syncalibur alert` | Test the graphical pop-up diagnostic terminal window on your desktop environment |
 | `syncalibur uninstall` | Stop the background daemon and remove OS startup registration |
 
