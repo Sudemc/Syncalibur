@@ -1829,6 +1829,39 @@ commit_changes() {
   local path reason msg count line err_out
   local -a excludes=() files=()
 
+  # 1. Pre-flight Syntax Gate & Shannon Entropy Secret Shield (Go Engine)
+  if ensure_go_engine; then
+    local pf_out pf_code=0
+    pf_out="$("${GO_ENGINE_BIN}" preflight "${REPO_ROOT}" --json 2>/dev/null || true)"
+    if [[ -n "${pf_out}" ]] && command -v jq >/dev/null 2>&1; then
+      pf_code="$(jq -r '.exit_code // 0' <<< "${pf_out}")"
+      if (( pf_code == 3 )); then
+        while IFS= read -r q_file; do
+          [[ -z "${q_file}" ]] && continue
+          excludes+=(":(exclude,literal)${q_file}")
+          log "⛨ [SECRET SHIELD] Quarantined '${q_file}' (high-entropy credential detected; excluded from commit)"
+        done < <(jq -r '.quarantined_files[]?' <<< "${pf_out}")
+      elif (( pf_code == 2 )); then
+        local syn_err
+        syn_err="$(jq -r '.details[0] // .syntax_errors[0] // "syntax error"' <<< "${pf_out}")"
+        log "▲ [SYNTAX HOLD] Incomplete syntax in ${syn_err}; holding commit until write settles."
+        return 1
+      fi
+    elif ensure_go_engine; then
+      local pf_raw pf_rc=0
+      pf_raw="$("${GO_ENGINE_BIN}" preflight "${REPO_ROOT}" 2>&1)" || pf_rc=$?
+      if (( pf_rc == 2 )); then
+        local first_err
+        first_err="$(head -n 2 <<< "${pf_raw}" | tr '\n' ' ')"
+        log "▲ [SYNTAX HOLD] ${first_err}; holding commit until write settles."
+        return 1
+      elif (( pf_rc == 3 )); then
+        log "⛨ [SECRET SHIELD] Detected credential in working tree; holding commit."
+        return 1
+      fi
+    fi
+  fi
+
   while IFS= read -r -d '' path; do
     if reason="$(block_reason "${path}")"; then
       excludes+=(":(exclude,literal)${path}")
@@ -1838,7 +1871,7 @@ commit_changes() {
 
   if ! err_out="$(git add -A -- "${SCOPE}" "${excludes[@]}" 2>&1)"; then
     printf '%s\n' "${err_out}" >> "${LOG_FILE}"
-    log "❌ 'git add' failed (details in ${LOG_FILE})."
+    log "✕ 'git add' failed (details in ${LOG_FILE})."
     trigger_failure_alert "GIT STAGE (git add)" "git add failed while staging changes in '${SCOPE}'" "${err_out}"
     return 1
   fi
@@ -1869,11 +1902,11 @@ commit_changes() {
 
   if err_out="$(git commit -m "${msg}" 2>&1)"; then
     printf '%s\n' "${err_out}" >> "${LOG_FILE}"
-    log "✅ Committed ${count} file(s): ${msg}"
+    log "✓ Committed ${count} file(s): ${msg}"
     return 0
   fi
   printf '%s\n' "${err_out}" >> "${LOG_FILE}"
-  log "❌ 'git commit' failed (details in ${LOG_FILE})."
+  log "✕ 'git commit' failed (details in ${LOG_FILE})."
   trigger_failure_alert "GIT COMMIT" "git commit failed for '${msg}'" "${err_out}"
   return 1
 }
