@@ -2692,7 +2692,7 @@ case "${1:-}" in
     shift
     cmd_notify "$@"
     ;;
-  pr)         cmd_pr "${2:-main}" ;;
+  pr)         cmd_pr "${2:-}" "${3:-}" ;;
   pull)       cd "${REPO_ROOT}" && safe_bidirectional_sync "$(get_remote)" "$(get_branch || echo main)" 1 ;;
   sync)       touch "${SYNC_TRIGGER_FILE}" && echo "⚡ Triggered immediate sync cycle." ;;
   pause)      touch "${PAUSE_FILE}" && echo "⏸️  Syncalibur paused. Run 'syncalibur resume' to continue." ;;
