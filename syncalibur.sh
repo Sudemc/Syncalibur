@@ -2708,18 +2708,28 @@ run_daemon() {
     if has_changes_in_scope; then
       snap="$(snapshot)"
       if (( force_sync )) || [[ "${snap}" != "${idle_snapshot}" ]]; then
+        if [[ -n "${last_hold_snapshot}" && "${snap}" == "${last_hold_snapshot}" ]]; then
+          # Snapshot unchanged since last hold/quarantine; check quietly every 15s instead of spamming logs
+          if (( $(date +%s) < next_hold_retry )); then
+            nap "${POLL_INTERVAL}"
+            continue
+          fi
+        fi
         log "✦ Changes detected; waiting for writes to settle..."
         (( ! force_sync )) && wait_for_quiet
         repo_busy >/dev/null && continue
         if commit_changes; then
           idle_snapshot="$(snapshot)"
+          last_hold_snapshot=""
           push_pending=1
           if (( $(date +%s) >= next_retry )); then
             next_retry=0
             retry_delay="${RETRY_BASE}"
           fi
         else
-          idle_snapshot="$(snapshot)"
+          last_hold_snapshot="$(snapshot)"
+          idle_snapshot=""
+          next_hold_retry=$(( $(date +%s) + 15 ))
         fi
       fi
     fi
