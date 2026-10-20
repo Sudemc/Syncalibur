@@ -546,7 +546,7 @@ func generateCommitMessage(repoRoot string) string {
 	}
 
 	var totalAdd, totalDel int
-	numOut, _ := exec.Command("git", "-C", repoRoot, "diff", "--cached", "--numstat").Output()
+	numOut, _ := exec.Command("git", "-C", repoRoot, "-c", "core.quotePath=false", "diff", "--cached", "--numstat").Output()
 	for _, line := range strings.Split(strings.TrimSpace(string(numOut)), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 {
@@ -598,7 +598,7 @@ func generateCommitMessage(repoRoot string) string {
 	} else if hasDel || totalDel > totalAdd {
 		cType = "refactor"
 	} else {
-		diffSample, _ := exec.Command("git", "-C", repoRoot, "diff", "--cached", "-U0").Output()
+		diffSample, _ := exec.Command("git", "-C", repoRoot, "-c", "core.quotePath=false", "diff", "--cached", "-U0").Output()
 		if regexp.MustCompile(`(?i)\+.*(fix|bug|error|patch|resolve|crash)`).Match(diffSample) {
 			cType = "fix"
 		} else {
