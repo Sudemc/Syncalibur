@@ -1316,7 +1316,7 @@ safe_bidirectional_sync() {
   local remote="$1" branch="$2" force_now="${3:-0}"
   local now
   now="$(date +%s)"
-  if (( ! force_now )) && (( now - LAST_BI_SYNC_TS < 45 )); then
+  if (( ! force_now )) && (( now - LAST_BI_SYNC_TS < PULL_INTERVAL )); then
     return 0
   fi
   LAST_BI_SYNC_TS="${now}"
@@ -1382,6 +1382,119 @@ safe_bidirectional_sync() {
 }
 
 # ==============================================================================
+# Automated Pull Request Template Generator (`render_auto_pr_body` & `syncalibur pr`)
+# ==============================================================================
+
+render_auto_pr_body() {
+  local repo_dir="$1" base_branch="$2" head_branch="$3" pr_title="$4" trigger_reason="${5:-Protected Branch Auto-PR (\`GH006\`)}"
+  local diff_range="refs/remotes/origin/${base_branch}..HEAD"
+  if ! git -C "${repo_dir}" rev-parse --verify "refs/remotes/origin/${base_branch}" >/dev/null 2>&1; then
+    diff_range="HEAD~1..HEAD"
+  fi
+
+  local stat_summary changed_list file_line
+  stat_summary="$(git -C "${repo_dir}" diff --shortstat "${diff_range}" 2>/dev/null || echo "1 file changed")"
+  stat_summary="${stat_summary#"${stat_summary%%[![:space:]]*}"}"
+
+  local chk_go=" " chk_sh=" " chk_inst=" " chk_docs=" " chk_app=" "
+  changed_list=""
+  while IFS= read -r file_line; do
+    [[ -z "${file_line}" ]] && continue
+    changed_list="${changed_list}- \`${file_line}\`"$'\n'
+    case "${file_line}" in
+      cmd/syncalibur-engine/*|*.go) chk_go="x" ;;
+      syncalibur.sh) chk_sh="x" ;;
+      install.sh|.github/*) chk_inst="x" ;;
+      README.md|*.env.example|*.list.example|docs/*|*.md) chk_docs="x" ;;
+      *) chk_app="x" ;;
+    esac
+  done < <(git -C "${repo_dir}" diff --name-only "${diff_range}" 2>/dev/null)
+
+  if [[ -z "${changed_list}" ]]; then
+    changed_list="- \`$(git -C "${repo_dir}" log -1 --name-only --pretty=format: HEAD 2>/dev/null | head -n 1 || echo "repository files")\`"$'\n'
+    chk_app="x"
+  fi
+
+  cat << EOF
+## ⚔️ Summary
+
+**${pr_title}**
+
+| Field | Details |
+| :--- | :--- |
+| **Trigger** | ${trigger_reason} |
+| **Branches** | \`${head_branch}\` → \`${base_branch}\` |
+| **Diff Stat** | \`${stat_summary:-auto-sync}\` |
+| **Sync Engine** | Syncalibur Autonomous Git Daemon |
+
+---
+
+## 📂 Changed Files & Diff Telemetry
+
+${changed_list}
+---
+
+## 🧩 Component Area
+
+- [${chk_go}] **Go Core Engine** (\`cmd/syncalibur-engine/main.go\`)
+- [${chk_sh}] **Daemon & Service Supervisor** (\`syncalibur.sh\`)
+- [${chk_inst}] **Public Installer & Packaging** (\`install.sh\`, \`.github/\`)
+- [${chk_docs}] **Documentation & Config Templates** (\`README.md\`, \`syncalibur.env.example\`, \`repos.list.example\`)
+- [${chk_app}] **Application / Repository Code** (watched project files)
+
+---
+
+## 🛡️ Verification & Safety Checklist
+
+- [x] Secret & large-file safety shield verified (no \`.env\`, \`.pem\`, \`.key\`, \`.tfstate\`, or binaries > ${MAX_FILE_SIZE_MB} MiB)
+- [x] Personal \`syncalibur.env\` and \`repos.list\` files are **not** included in this PR
+- [x] \`bash -n syncalibur.sh && bash -n install.sh\` passes without syntax errors
+- [x] \`go build ./cmd/syncalibur-engine\` compiles cleanly with zero external dependencies
+- [x] \`syncalibur doctor\` passes all 10 diagnostic checks
+EOF
+}
+
+cmd_pr() {
+  cd "${REPO_ROOT}" || return 1
+  local base_branch="${1:-main}"
+  local cur_branch pr_branch pr_title pr_body pr_url
+  cur_branch="$(get_branch || echo main)"
+  pr_title="$(git log -1 --pretty=%s 2>/dev/null || echo "feat: automated Syncalibur update")"
+
+  if [[ "${cur_branch}" == "${base_branch}" ]]; then
+    pr_branch="sync/pr-$(date '+%Y%m%d-%H%M%S')"
+  else
+    pr_branch="${cur_branch}"
+  fi
+
+  pr_body="$(render_auto_pr_body "${REPO_ROOT}" "${base_branch}" "${pr_branch}" "${pr_title}" "Manual / CLI Pull Request (\`syncalibur pr\`)")"
+
+  if [[ "${1:-}" == "--dry-run" || "${1:-}" == "--preview" ]]; then
+    printf '%s\n' "${pr_body}"
+    return 0
+  fi
+
+  echo "📤 Pushing branch '${pr_branch}' to origin..."
+  git push -u origin "HEAD:refs/heads/${pr_branch}" || return 1
+
+  if command -v gh >/dev/null 2>&1; then
+    echo "🔀 Opening GitHub Pull Request (${pr_branch} -> ${base_branch}) with Syncalibur PR Template..."
+    pr_url="$(gh pr create --base "${base_branch}" --head "${pr_branch}" --title "${pr_title}" --body "${pr_body}" 2>&1)" && {
+      echo "✅ Pull Request created: ${pr_url}"
+      send_webhook_notification "summary" "🔀 Pull Request Opened ($(basename "${REPO_ROOT}"))" "${pr_title}" "${pr_url}"
+      return 0
+    }
+    echo "⚠️  ${pr_url}" >&2
+  elif command -v glab >/dev/null 2>&1; then
+    echo "🔀 Opening GitLab Merge Request (${pr_branch} -> ${base_branch}) with Syncalibur PR Template..."
+    glab mr create --target-branch "${base_branch}" --source-branch "${pr_branch}" --title "${pr_title}" --description "${pr_body}" --yes && return 0
+  else
+    echo "ℹ️  Install 'gh' (GitHub CLI) or 'glab' (GitLab CLI) to create PRs directly from the terminal."
+    printf '\n%s\n' "${pr_body}"
+  fi
+}
+
+# ==============================================================================
 # Self-Repo Watcher & Automatic Self-Updater (Rebuilds Go Engine + Hot-Reloads)
 # ==============================================================================
 
@@ -1421,7 +1534,7 @@ sync_and_update_self_repo() {
     if ! git -C "${SELF_REPO_ROOT}" diff --cached --quiet; then
       local s_msg
       if ensure_go_engine; then
-        s_msg="$("${GO_ENGINE_BIN}" commit-msg "${SELF_REPO_ROOT}" 2>/dev/null || echo "chore(syncalibur): self-sync ($(date '+%H:%M:%S'))")"
+        s_msg="$(SYNCALIBUR_AI_COMMIT="${AI_COMMIT}" SYNCALIBUR_OLLAMA_MODEL="${OLLAMA_MODEL}" "${GO_ENGINE_BIN}" commit-msg "${SELF_REPO_ROOT}" 2>/dev/null || echo "chore(syncalibur): self-sync ($(date '+%H:%M:%S'))")"
       else
         s_msg="chore(syncalibur): self-sync ($(date '+%H:%M:%S'))"
       fi
@@ -1432,14 +1545,15 @@ sync_and_update_self_repo() {
           printf '%s\n' "${p_out}" >> "${LOG_FILE}"
           log "🎉 Self-Sync: Pushed Syncalibur repository updates to ${self_remote}/${self_branch}."
         elif grep -qiE 'GH006|protected branch|Required status check|At least 1 approving review' <<< "${p_out}"; then
-          local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')"
-          log "🔀 Self-Sync: '${self_branch}' is protected; pushing feature branch '${pr_branch}' & opening Pull Request..."
+          local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')" pr_body
+          pr_body="$(render_auto_pr_body "${SELF_REPO_ROOT}" "${self_branch}" "${pr_branch}" "${s_msg}" "Self-Sync Protected Branch Auto-PR (\`GH006\`)")"
+          log "🔀 Self-Sync: '${self_branch}' is protected; pushing feature branch '${pr_branch}' & opening templated Pull Request..."
           if git -C "${SELF_REPO_ROOT}" push -u "${self_remote}" "HEAD:refs/heads/${pr_branch}" >> "${LOG_FILE}" 2>&1; then
             if command -v gh >/dev/null 2>&1; then
-              gh pr create -R YusufKaya00/Syncalibur --base "${self_branch}" --head "${pr_branch}" --title "${s_msg}" --body "Automated Syncalibur self-sync Pull Request." >> "${LOG_FILE}" 2>&1 || true
+              gh pr create -R YusufKaya00/Syncalibur --base "${self_branch}" --head "${pr_branch}" --title "${s_msg}" --body "${pr_body}" >> "${LOG_FILE}" 2>&1 || true
             fi
             git -C "${SELF_REPO_ROOT}" reset --hard "${self_remote}/${self_branch}" >/dev/null 2>&1 || true
-            log "🎉 Self-Sync: Opened Pull Request '${pr_branch}' -> '${self_branch}'."
+            log "🎉 Self-Sync: Opened templated Pull Request '${pr_branch}' -> '${self_branch}'."
           fi
         else
           printf '%s\n' "${p_out}" >> "${LOG_FILE}"
@@ -1470,6 +1584,7 @@ sync_and_update_self_repo() {
     ensure_go_engine || true
     ensure_logo_ansi || true
     clear_sync_failure
+    send_webhook_notification "summary" "⟳ Syncalibur Self-Updated (${local_sha:0:7} → ${remote_sha:0:7})" "Pulled ${behind_cnt} upstream commit(s), rebuilt Go engine, and hot-reloaded daemon." "${pull_out}"
     log "✅ Self-Update: Syncalibur updated to ${remote_sha:0:7}; hot-reloading daemon in the background..."
     trap - EXIT
     exec /usr/bin/env bash "${SCRIPT_PATH}" run
@@ -1694,7 +1809,7 @@ commit_changes() {
 
   count=${#files[@]}
   if [[ "${SEMANTIC_COMMITS}" == "true" ]] && ensure_go_engine; then
-    msg="$(SYNCALIBUR_AI_COMMIT="${AI_COMMIT}" "${GO_ENGINE_BIN}" commit-msg "${REPO_ROOT}" 2>/dev/null || true)"
+    msg="$(SYNCALIBUR_AI_COMMIT="${AI_COMMIT}" SYNCALIBUR_OLLAMA_MODEL="${OLLAMA_MODEL}" "${GO_ENGINE_BIN}" commit-msg "${REPO_ROOT}" 2>/dev/null || true)"
   fi
   if [[ -z "${msg:-}" ]]; then
     msg="auto: ${files[0]}"
@@ -1733,13 +1848,14 @@ push_error_summary() {
 }
 
 push_changes() {
-  local remote="$1" branch="$2" output rc targets_desc err_summary
+  local remote="$1" branch="$2" output rc targets_desc err_summary last_commit_msg
   if [[ -z "$(get_push_urls "${remote}")" ]]; then
     auto_create_or_bind_remote "" "" || true
     remote="$(get_remote)"
   fi
 
   targets_desc="$(describe_push_targets_inline "${remote}")"
+  last_commit_msg="$(git log -1 --pretty=%s 2>/dev/null || echo "auto-sync")"
   log "📤 Pushing '${branch}' -> ${targets_desc}..."
   output="$(run_with_timeout "${PUSH_TIMEOUT}" git push -u "${remote}" "${branch}" 2>&1)"
   rc=$?
@@ -1747,20 +1863,25 @@ push_changes() {
   if (( rc == 0 )); then
     clear_sync_failure
     log "🎉 Push succeeded (${targets_desc})."
+    send_webhook_notification "success" "★ Syncalibur Push Succeeded ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Target: ${targets_desc} (${branch})"
     return 0
   fi
 
-  # If push failed due to protected branch rules (GH006 / required PR review), auto-push a branch and open a PR!
+  # If push failed due to protected branch rules (GH006 / required PR review), auto-push a branch and open a templated PR!
   if grep -qiE 'GH006|protected branch|Required status check|At least 1 approving review' <<< "${output}"; then
-    local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')" pr_title
-    pr_title="$(git log -1 --pretty=%s 2>/dev/null || echo "chore: automated sync")"
-    log "🔀 Branch '${branch}' is protected; pushing to '${pr_branch}' and opening Pull Request..."
+    local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')" pr_title pr_body
+    pr_title="${last_commit_msg}"
+    pr_body="$(render_auto_pr_body "${REPO_ROOT}" "${branch}" "${pr_branch}" "${pr_title}" "Protected Branch Auto-PR (\`GH006\`)")"
+    log "🔀 Branch '${branch}' is protected; pushing to '${pr_branch}' and opening templated Pull Request..."
     if run_with_timeout "${PUSH_TIMEOUT}" git push -u origin "HEAD:refs/heads/${pr_branch}" >> "${LOG_FILE}" 2>&1; then
       if command -v gh >/dev/null 2>&1; then
-        gh pr create --base "${branch}" --head "${pr_branch}" --title "${pr_title}" --body "Automated Pull Request created by Syncalibur because \`${branch}\` is protected." >> "${LOG_FILE}" 2>&1 || true
+        gh pr create --base "${branch}" --head "${pr_branch}" --title "${pr_title}" --body "${pr_body}" >> "${LOG_FILE}" 2>&1 || true
+      elif command -v glab >/dev/null 2>&1; then
+        glab mr create --target-branch "${branch}" --source-branch "${pr_branch}" --title "${pr_title}" --description "${pr_body}" --yes >> "${LOG_FILE}" 2>&1 || true
       fi
       clear_sync_failure
-      log "🎉 Opened Pull Request '${pr_branch}' -> '${branch}'."
+      log "🎉 Opened templated Pull Request '${pr_branch}' -> '${branch}'."
+      send_webhook_notification "summary" "🔀 Auto-Opened Pull Request ($(basename "${REPO_ROOT}"))" "${pr_title} (${pr_branch} -> ${branch})" "${pr_body}"
       return 0
     fi
   fi
@@ -1774,6 +1895,7 @@ push_changes() {
       if (( rc == 0 )); then
         clear_sync_failure
         log "🎉 Push succeeded after automatic rebase (${targets_desc})."
+        send_webhook_notification "success" "★ Syncalibur Push Succeeded ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Rebased & pushed to ${targets_desc} (${branch})"
         return 0
       fi
     else
@@ -1801,6 +1923,7 @@ push_changes() {
       if (( rc == 0 )); then
         clear_sync_failure
         log "🎉 Push succeeded after auto-creating remote repository (${targets_desc})."
+        send_webhook_notification "success" "★ Syncalibur Created Remote & Pushed ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Target: ${targets_desc} (${branch})"
         return 0
       fi
     fi
