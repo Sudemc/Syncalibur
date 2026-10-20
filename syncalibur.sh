@@ -2133,16 +2133,16 @@ cmd_ui() {
 cmd_doctor() {
   print_syncalibur_dashboard
   printf '  %s╭────────────────────────────────────────────────────────────────────────────────────────╮%s\n' "${C_GOLD}" "${C_RESET}"
-  printf '  %s│%s  %s%s%-84s%s  %s│%s\n' "${C_GOLD}" "${C_RESET}" "${C_GOLD}" "${C_BOLD}" "🩺  S Y N C A L I B U R   D O C T O R   —   1 0 - P O I N T   D I A G N O S T I C S" "${C_RESET}" "${C_GOLD}" "${C_RESET}"
+  printf '  %s│%s  %s%s%-84s%s  %s│%s\n' "${C_GOLD}" "${C_RESET}" "${C_GOLD}" "${C_BOLD}" "✚  S Y N C A L I B U R   D O C T O R   —   1 1 - P O I N T   D I A G N O S T I C S" "${C_RESET}" "${C_GOLD}" "${C_RESET}"
   printf '  %s╰────────────────────────────────────────────────────────────────────────────────────────╯%s\n\n' "${C_GOLD}" "${C_RESET}"
 
   local pass=0 warn=0 fail=0
   check_item() {
     local st="$1" name="$2" msg="$3"
     case "${st}" in
-      OK)   printf '    %s[✔]%s %-26s : %s%s%s\n' "${C_GREEN}" "${C_RESET}" "${name}" "${C_WHITE}" "${msg}" "${C_RESET}"; pass=$((pass+1)) ;;
-      WARN) printf '    %s[!]%s %-26s : %s%s%s\n' "${C_AMBER}" "${C_RESET}" "${name}" "${C_AMBER}" "${msg}" "${C_RESET}"; warn=$((warn+1)) ;;
-      FAIL) printf '    %s[✖]%s %-26s : %s%s%s\n' "${C_RED}" "${C_RESET}" "${name}" "${C_RED}" "${msg}" "${C_RESET}"; fail=$((fail+1)) ;;
+      OK)   printf '    %s[✓]%s %-26s : %s%s%s\n' "${C_GREEN}" "${C_RESET}" "${name}" "${C_WHITE}" "${msg}" "${C_RESET}"; pass=$((pass+1)) ;;
+      WARN) printf '    %s[▲]%s %-26s : %s%s%s\n' "${C_AMBER}" "${C_RESET}" "${name}" "${C_AMBER}" "${msg}" "${C_RESET}"; warn=$((warn+1)) ;;
+      FAIL) printf '    %s[✕]%s %-26s : %s%s%s\n' "${C_RED}" "${C_RESET}" "${name}" "${C_RED}" "${msg}" "${C_RESET}"; fail=$((fail+1)) ;;
     esac
   }
 
@@ -2192,7 +2192,7 @@ cmd_doctor() {
     check_item "WARN" "Provider Authentication" "No verified GitHub/GitLab CLI or SSH session"
   fi
 
-  # 7. Remote Reachability
+  # 7. Push Destinations
   local remote
   remote="$(get_remote)"
   if [[ -n "$(get_push_urls "${remote}")" ]]; then
@@ -2224,6 +2224,21 @@ cmd_doctor() {
     check_item "OK" "Telegram & Webhooks" "Webhook active (${WEBHOOK_EVENTS})"
   else
     check_item "OK" "Telegram & Webhooks" "Desktop & Terminal Popup active (set TELEGRAM_BOT_TOKEN in syncalibur.env for Telegram)"
+  fi
+
+  # 11. Pre-flight Syntax & Shannon Entropy Secret Shield
+  if ensure_go_engine; then
+    local pf_test_out pf_rc=0
+    pf_test_out="$("${GO_ENGINE_BIN}" preflight "${REPO_ROOT}" 2>&1)" || pf_rc=$?
+    if (( pf_rc == 0 )); then
+      check_item "OK" "Syntax & Secret Shield" "Active (Shannon entropy & syntax pre-flight verified clean)"
+    elif (( pf_rc == 3 )); then
+      check_item "WARN" "Syntax & Secret Shield" "Credential detected in repository (quarantine active)"
+    else
+      check_item "WARN" "Syntax & Secret Shield" "Syntax error detected in working tree"
+    fi
+  else
+    check_item "WARN" "Syntax & Secret Shield" "Go engine not compiled"
   fi
 
   printf '\n  %s────────────────────────────────────────────────────────────────────────────────────────%s\n' "${C_SLATE}" "${C_RESET}"
