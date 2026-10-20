@@ -1621,14 +1621,18 @@ sync_and_update_self_repo() {
   if pull_out="$(run_with_timeout 60 git -C "${SELF_REPO_ROOT}" pull --rebase --autostash "${self_remote}" "${self_branch}" 2>&1)"; then
     printf '%s\n' "${pull_out}" >> "${LOG_FILE}"
     chmod +x "${SCRIPT_PATH}" 2>/dev/null || true
-    rm -f "${GO_ENGINE_BIN}" "${LOGO_ANSI_FILE}" 2>/dev/null || true
+    rm -f "${GO_ENGINE_BIN}" "${GO_ENGINE_COMPAT_BIN}" "${LOGO_ANSI_FILE}" 2>/dev/null || true
     ensure_go_engine || true
     ensure_logo_ansi || true
     clear_sync_failure
     send_webhook_notification "summary" "⟳ Syncalibur Self-Updated (${local_sha:0:7} → ${remote_sha:0:7})" "Pulled ${behind_cnt} upstream commit(s), rebuilt Go engine, and hot-reloaded daemon." "${pull_out}"
     log "✅ Self-Update: Syncalibur updated to ${remote_sha:0:7}; hot-reloading daemon in the background..."
     trap - EXIT
-    exec /usr/bin/env bash "${SCRIPT_PATH}" run
+    if [[ -x "${GO_ENGINE_BIN}" ]]; then
+      exec "${GO_ENGINE_BIN}" daemon-exec "${SCRIPT_PATH}" run
+    else
+      exec /usr/bin/env bash "${SCRIPT_PATH}" run
+    fi
   else
     printf '%s\n' "${pull_out}" >> "${LOG_FILE}"
     git -C "${SELF_REPO_ROOT}" rebase --abort >/dev/null 2>&1 || true
