@@ -2129,7 +2129,7 @@ cmd_doctor() {
   # 4. Daemon Process
   local pid
   if pid="$(daemon_pid)"; then
-    check_item "OK" "Daemon Process" "Running (PID ${pid})"
+    check_item "OK" "Daemon Process" "Running (PID ${pid}) $(daemon_resource_badge "${pid}")"
   else
     check_item "WARN" "Daemon Process" "Not running (start with 'syncalibur start')"
   fi
@@ -2207,7 +2207,7 @@ acquire_single_instance_lock() {
     return 0
   fi
   local existing_pid
-  if existing_pid="$(daemon_pid)" && [[ "${existing_pid}" != "$$" ]]; then
+  if existing_pid="$(daemon_pid)" && [[ "${existing_pid}" != "$$" && "${existing_pid}" != "${SYNCALIBUR_SUPERVISOR_PID:-}" ]]; then
     return 1
   fi
   return 0
@@ -2224,11 +2224,20 @@ run_daemon() {
   mkdir -p "$(dirname "${LOG_FILE}")"
   ensure_go_engine || true
 
+  # Re-exec under native `bin/syncalibur daemon-exec` if invoked via `bash syncalibur.sh run`
+  # so `top`, `htop`, `ps`, Activity Monitor, and Task Manager show `syncalibur` as the process name!
+  if [[ -z "${SYNCALIBUR_WRAPPED:-}" ]] && [[ -x "${GO_ENGINE_BIN}" ]]; then
+    exec "${GO_ENGINE_BIN}" daemon-exec "${SCRIPT_PATH}" run
+  fi
+  if [[ -w "/proc/$$/comm" ]]; then
+    printf 'syncalibur' > "/proc/$$/comm" 2>/dev/null || true
+  fi
+
   if ! acquire_single_instance_lock; then
     log "❌ Another Syncalibur instance is already running for ${REPO_ROOT}."
     exit 1
   fi
-  echo "$$" > "${PID_FILE}"
+  echo "${SYNCALIBUR_SUPERVISOR_PID:-$$}" > "${PID_FILE}"
   trap on_exit EXIT
   trap 'exit 0' INT TERM
 
@@ -2377,8 +2386,14 @@ start_background_nohup() {
     return 0
   fi
   mkdir -p "$(dirname "${LOG_FILE}")"
-  SYNCALIBUR_BACKGROUND=1 SYNCALIBUR_CONFIG="${CONFIG_FILE}" \
-    nohup bash "${SCRIPT_PATH}" run </dev/null >> "${LOG_FILE}" 2>&1 &
+  ensure_go_engine || true
+  if [[ -x "${GO_ENGINE_BIN}" ]]; then
+    SYNCALIBUR_BACKGROUND=1 SYNCALIBUR_CONFIG="${CONFIG_FILE}" \
+      nohup "${GO_ENGINE_BIN}" daemon-exec "${SCRIPT_PATH}" run </dev/null >> "${LOG_FILE}" 2>&1 &
+  else
+    SYNCALIBUR_BACKGROUND=1 SYNCALIBUR_CONFIG="${CONFIG_FILE}" \
+      nohup bash -c 'exec -a syncalibur bash "$1" run' _ "${SCRIPT_PATH}" </dev/null >> "${LOG_FILE}" 2>&1 &
+  fi
   sleep 1
   if pid="$(daemon_pid)"; then
     echo "✅ Syncalibur started in the background (PID ${pid})."
@@ -2417,6 +2432,11 @@ cmd_install() {
     echo "📝 Created local config file: ${DEFAULT_ENV_FILE} (watching ${WATCH_PATH})"
   fi
 
+  local exec_start_cmd="/usr/bin/env bash \"${SCRIPT_PATH}\" run"
+  if [[ -x "${GO_ENGINE_BIN}" ]]; then
+    exec_start_cmd="\"${GO_ENGINE_BIN}\" daemon-exec \"${SCRIPT_PATH}\" run"
+  fi
+
   case "${SERVICE_BACKEND}" in
     systemd)
       if ! is_service_installed && daemon_pid >/dev/null; then
@@ -2433,7 +2453,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=${REPO_ROOT}
 Environment="SYNCALIBUR_CONFIG=${CONFIG_FILE}"
-ExecStart=/usr/bin/env bash "${SCRIPT_PATH}" run
+ExecStart=${exec_start_cmd}
 Restart=always
 RestartSec=5
 
@@ -2450,7 +2470,43 @@ EOF
     launchd)
       daemon_pid >/dev/null && stop_background_pid
       mkdir -p "$(dirname "${PLIST_FILE}")"
-      cat > "${PLIST_FILE}" << EOF
+      if [[ -x "${GO_ENGINE_BIN}" ]]; then
+        cat > "${PLIST_FILE}" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${PLIST_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${GO_ENGINE_BIN}</string>
+    <string>daemon-exec</string>
+    <string>${SCRIPT_PATH}</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>SYNCALIBUR_CONFIG</key>
+    <string>${CONFIG_FILE}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${LOG_FILE}</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_FILE}</string>
+</dict>
+</plist>
+EOF
+      else
+        cat > "${PLIST_FILE}" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -2483,6 +2539,7 @@ EOF
 </dict>
 </plist>
 EOF
+      fi
       launchctl unload "${PLIST_FILE}" >/dev/null 2>&1 || true
       launchctl load -w "${PLIST_FILE}" || { echo "❌ launchctl load failed." >&2; return 1; }
       ;;
