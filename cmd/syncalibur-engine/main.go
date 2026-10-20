@@ -38,6 +38,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
+	"unsafe"
 )
 
 // ANSI Color Palette (24-bit TrueColor & 16-color Fallback)
