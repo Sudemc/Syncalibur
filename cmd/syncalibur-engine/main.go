@@ -2,11 +2,11 @@
 // Syncalibur Go Engine (cmd/syncalibur-engine/main.go)
 // ------------------------------------------------------------------------------
 // High-performance, zero-dependency Go engine powering Syncalibur's:
-//   1. Native 2x2 Subpixel TrueColor PNG-to-ANSI Quadrant Renderer (`render-logo`)
+//   1. High-Definition TrueColor Terminal Emblem Renderer (`render-logo`)
 //   2. Semantic Conventional Commit Classifier + Diff-Stat + AI Hook (`commit-msg`)
 //   3. Multi-Repository Fleet Scanner & Parallel Status Probe (`fleet-scan`, `fleet-status`)
 //   4. 7-Day Commit Velocity Sparkline Generator (`sparkline`)
-//   5. Multi-Channel Webhook Dispatcher for Discord, Slack & Telegram (`webhook`)
+//   5. First-Class Telegram Bot & Multi-Channel Webhook Dispatcher (`webhook`, `telegram`)
 //   6. Interactive Live TUI Control Center (`ui`)
 // ==============================================================================
 package main
@@ -19,8 +19,10 @@ import (
 	"image"
 	"image/color"
 	_ "image/png"
+	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -60,7 +62,7 @@ type rgbaPx struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: syncalibur-engine <render-logo|commit-msg|sparkline|fleet-scan|fleet-status|webhook|ui> [args...]")
+		fmt.Fprintln(os.Stderr, "Usage: syncalibur-engine <render-logo|commit-msg|sparkline|fleet-scan|fleet-status|webhook|telegram|ui> [args...]")
 		os.Exit(1)
 	}
 
@@ -102,7 +104,18 @@ func main() {
 		if len(os.Args) < 9 {
 			os.Exit(1)
 		}
-		_ = sendWebhook(os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6], os.Args[7], os.Args[8])
+		if err := sendWebhook(os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6], os.Args[7], os.Args[8]); err != nil {
+			fmt.Fprintf(os.Stderr, "webhook error: %v\n", err)
+			os.Exit(1)
+		}
+	case "telegram":
+		if len(os.Args) < 10 {
+			os.Exit(1)
+		}
+		if err := sendTelegramMessage(os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6], os.Args[7], os.Args[8], os.Args[9]); err != nil {
+			fmt.Fprintf(os.Stderr, "telegram error: %v\n", err)
+			os.Exit(1)
+		}
 	case "ui":
 		scriptPath := ""
 		repoRoot := "."
@@ -119,7 +132,7 @@ func main() {
 }
 
 // ==============================================================================
-// 1. Native 2x2 Subpixel TrueColor PNG-to-ANSI Quadrant Renderer
+// 1. High-Definition TrueColor Terminal Emblem Renderer
 // ==============================================================================
 
 func renderLogoANSI(srcPath, dstPath string, cols, rows int) error {
