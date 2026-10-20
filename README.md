@@ -50,29 +50,39 @@ Once installed, the global `syncalibur` command is automatically linked into `~/
 
 ## What is Syncalibur?
 
-### 1. Git Intelligence, Bidirectional Sync, Fleet & Event-Driven Watching
-- **Compiled Go Core (`cmd/syncalibur-engine/main.go`):** Zero external Go dependencies (100% Go standard library). Automatically compiled into `bin/syncalibur-engine` on first run or after any self-update.
-- **Semantic Conventional Commit Engine:** Instead of generic timestamps, the Go diff analyzer inspects staged changes, detects common directory scopes, classifies commit types (`feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`), and appends line addition/deletion metrics:
-  - `feat(scripts): update syncalibur.sh, main.go (+142/-18)`
+### 1. AST Git Intelligence, Conventional Commits & Multi-Language Support
+- **Compiled Go Core (`cmd/syncalibur-engine/main.go`):** Zero external Go dependencies (100% Go standard library). Automatically compiled into `bin/syncalibur` on first run or after any self-update.
+- **AST & Function-Aware Conventional Commit Engine:** Goes far beyond file-level messages (`auto: update file.js`). The Go engine inspects Go AST nodes (`ast.FuncDecl`, `ast.TypeSpec`) and Unified Diff Hunks across React (`export const Header = () => ...`), TypeScript, JavaScript, Java, Python, Rust, and C++ to generate pinpoint Conventional Commits:
+  - `feat(Header): update Header() (+15/-2)`
+  - `feat(main): update detectSecretsInFile() (+1/-1)`
+  - `feat(Payment): update processTransaction() (+20/-4)`
   - `docs(README): update README.md (+85/-12)`
   - Optional local **Ollama AI Commit Hook** (`SYNCALIBUR_AI_COMMIT="true"`) with a strict 2-second non-blocking timeout and automatic heuristic fallback.
+- **Zero-Friction Commit Protection (Syntax Hold & Secret Shield):**
+  - **Syntax Hold:** Pre-flight gate that holds back commits if code has broken syntax (open braces, unclosed string/template literals, half-written statements) until you finish typing. Combines native compilers (`go/parser`, `py_compile`, `node --check`, `bash -n`, `tsc`, `javac`) with a native **Universal Lexical Balance Engine** supporting Go, Python, React (JSX/TSX), TypeScript, Node.js, Java, Bash, YAML, C/C++, Rust, and PHP.
+  - **Secret Shield & Shannon Entropy Quarantine:** Detects credentials via signatures (AWS, GitHub PAT, OpenAI `sk-...`, Slack, Private Keys) and mathematical Shannon Entropy ($H \ge 4.4$ bit/char). Quarantines sensitive files into `git add` exclude patterns without blocking other safe files.
 - **Safe Bidirectional Sync (`--rebase --autostash`):** Periodically fetches from your primary remote (`origin`), detects when remote commits are ahead of local `HEAD`, and safely runs `git pull --rebase --autostash` when the working tree is clean. If a merge conflict is detected, Syncalibur **immediately aborts the rebase** (`git rebase --abort`), leaves your working tree untouched, and pops open a diagnostic terminal window.
 - **Protected Branch Auto-PR with Rich Template:** If a target branch (like `main`) is protected with required Pull Request reviews or force-push restrictions, Syncalibur automatically pushes a `sync/auto-*` branch and opens a Pull Request populated with a structured Markdown PR template (diff stats, component checkboxes, and verification checklist).
 - **Organic Commit Cadence & Contribution Consistency:** Naturally turns your real day-to-day coding progress into steady, well-scoped semantic commits pushed on time across GitHub and GitLab — keeping your contribution graph consistently active with genuine code changes (never fake or empty commits).
 - **Native Filesystem Event Watching (`inotifywait` / `fswatch`):** Zero-CPU event-driven watching when `inotifywait` (Linux) or `fswatch` (macOS) is installed, with automatic fallback to lightweight polling.
 - **Multi-Repository Fleet Supervisor (`repos.list`):** Watch 5, 10, or 50 repositories simultaneously! Run `syncalibur fleet scan ~/projects` to auto-discover all Git repositories using concurrent Go goroutines and supervise them in parallel.
 
-### 2. Interactive Live TUI Cockpit, Telegram Bot Alerts & Diagnostics
-- **Native `syncalibur` Process Identity (`top` / `htop` / Activity Monitor / Task Manager):** Runs under its own compiled binary process name **`syncalibur`** across Linux, macOS, and Windows so you can inspect exact CPU and RAM usage directly in `top` or `syncalibur status`.
-- **Interactive Live TUI Cockpit (`syncalibur ui`):** Full-screen, flicker-free terminal control center built in Go using raw terminal mode and alternate screen buffering. Features the high-definition TrueColor emblem, live daemon telemetry, 7-day commit velocity sparkline (`▂█▅··▅▁`), remote matrix, live log stream, and single-keystroke hotkeys:
-  - `[p]` Pause / Resume Auto-Sync
-  - `[s]` Force Immediate Commit & Push
-  - `[b]` Force Bidirectional Pull (`--rebase`)
-  - `[u]` Check & Apply Syncalibur Self-Update
-  - `[d]` Run 10-Point System Doctor
-  - `[q]` Quit TUI cleanly
+### 2. Two-Pane Live TUI Cockpit, Lucide Typography & Diagnostics
+- **Native `syncalibur` Process Identity (`top` / `htop` / Activity Monitor / Task Manager):** Runs under its own compiled binary process name **`syncalibur`** across Linux, macOS, and Windows so you can inspect exact CPU (~0.0%) and RAM (~7 MB) usage directly in `top` or `syncalibur status`.
+- **Interactive Two-Pane Live TUI Cockpit (`syncalibur ui`):** Full-screen, flicker-free terminal control center built in Go using raw terminal mode and alternate screen buffering. Split into two dedicated panes:
+  - **Top Pane (Live Telemetry Cockpit):** Displays real-time daemon state, today's commit count, 7-day velocity sparkline (` ▂█▅··▅▃`), Syntax & Secret Shield status, and hotkey cheatsheet (updated live every second).
+  - **Bottom Pane (Scrollable Live Log Viewport):** Dynamically sized viewport that reads `syncalibur.log` with full keyboard scrolling (`↑/↓` or Vim `j/k`, `PageUp/PageDown`, `g` Top, `G` Bottom) and Follow mode toggle (`f`).
+  - **Single-Keystroke Hotkeys:**
+    - `[p]` Pause / Resume Auto-Sync
+    - `[s]` Force Immediate Commit & Push
+    - `[b]` Force Bidirectional Pull (`--rebase`)
+    - `[f]` Toggle Live Log Follow Mode
+    - `[↑/↓]` or `[j/k]` Scroll Log Viewport
+    - `[d]` Run 11-Point System Doctor
+    - `[q]` Quit TUI cleanly
+- **Lucide Minimalist Typography:** All terminal outputs, emblems, banners, and diagnostic tables use sleek, standardized Lucide minimalist glyphs (`✓`, `✕`, `▲`, `⛨`, `✦`, `↗`, `↙`, `●`, `○`, `⇄`, `✚`, `◆`) instead of distracting colored emojis.
 - **Telegram Bot & Multi-Channel Webhooks (`Telegram`, `Discord`, `Slack`, `Generic JSON`):** Configure `SYNCALIBUR_TELEGRAM_BOT_TOKEN` & `SYNCALIBUR_TELEGRAM_CHAT_ID` (or `SYNCALIBUR_WEBHOOK_URL`) in `syncalibur.env` to receive instant rich notifications on push failures, rebase conflicts, self-updates, or every sync, and test anytime with `syncalibur notify` (`syncalibur telegram-test`).
-- **10-Point `syncalibur doctor` Diagnostic Suite:** Verifies Git identity, Go engine binary health, filesystem watcher availability, SSH connectivity (`github.com` / `gitlab.com`), `gh` / `glab` CLI authentication, OS background service registration, and remote push permissions.
+- **11-Point `syncalibur doctor` Diagnostic Suite:** Verifies Git identity, Go engine binary health, filesystem watcher availability, SSH connectivity (`github.com` / `gitlab.com`), `gh` / `glab` CLI authentication, OS background service registration, remote push permissions, and Syntax & Secret Shield verification.
 
 ---
 
