@@ -731,19 +731,44 @@ func tryAICommitMessage(repoRoot string) string {
 // 3. Pre-flight Syntax Gate & Shannon Entropy Secret Shield (`preflight`)
 // ==============================================================================
 
+var (
+	uuidRegex    = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	pureHexRegex = regexp.MustCompile(`^[0-9a-fA-F]{32,}$`)
+)
+
 func calculateShannonEntropy(s string) float64 {
 	if len(s) == 0 {
 		return 0
 	}
-	freq := make(map[rune]float64)
+	var freq [256]float64
+	var unicodeFreq map[rune]float64
+	hasUnicode := false
+	total := float64(len([]rune(s)))
+
 	for _, r := range s {
-		freq[r]++
+		if r < 256 {
+			freq[r]++
+		} else {
+			hasUnicode = true
+			if unicodeFreq == nil {
+				unicodeFreq = make(map[rune]float64)
+			}
+			unicodeFreq[r]++
+		}
 	}
-	total := float64(len(s))
+
 	var entropy float64
 	for _, count := range freq {
-		p := count / total
-		entropy -= p * math.Log2(p)
+		if count > 0 {
+			p := count / total
+			entropy -= p * math.Log2(p)
+		}
+	}
+	if hasUnicode {
+		for _, count := range unicodeFreq {
+			p := count / total
+			entropy -= p * math.Log2(p)
+		}
 	}
 	return entropy
 }
@@ -772,6 +797,13 @@ func detectSecretsInFile(filePath string) (bool, string) {
 			}
 		}
 
+		// Skip SVG vector elements and HTML integrity hashes
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(lower, "xmlns") || strings.Contains(lower, "<svg") || strings.Contains(lower, "<path") ||
+			strings.Contains(lower, "integrity=\"sha") || strings.Contains(lower, "sha512-") || strings.Contains(lower, "sha256-") {
+			continue
+		}
+
 		for _, re := range knownSecretRegexes {
 			if m := re.FindString(trimmed); m != "" {
 				return true, fmt.Sprintf("%s:%d (matches known credential signature)", filepath.Base(filePath), lineNum+1)
@@ -783,6 +815,12 @@ func detectSecretsInFile(filePath string) (bool, string) {
 		for _, w := range words {
 			w = strings.Trim(w, `"'=:,;()[]{}<>`)
 			if len(w) >= 24 {
+				// Exclude benign high-entropy assets: data URIs, base64 data, UUIDs, pure hex hashes
+				if strings.HasPrefix(w, "data:") || strings.Contains(w, "base64,") ||
+					uuidRegex.MatchString(w) || pureHexRegex.MatchString(w) {
+					continue
+				}
+
 				ent := calculateShannonEntropy(w)
 				if ent >= 4.4 {
 					hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(w)
