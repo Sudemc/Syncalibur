@@ -2133,11 +2133,15 @@ cmd_doctor() {
     check_item "WARN" "Global CLI Command" "Not in PATH (run 'syncalibur install')"
   fi
 
-  # 10. Multi-Channel Webhooks
-  if [[ -n "${WEBHOOK_URL}" ]]; then
-    check_item "OK" "Webhook Notifications" "Configured (${WEBHOOK_EVENTS})"
+  # 10. Telegram Bot & Multi-Channel Webhooks
+  if [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" && -n "${WEBHOOK_URL}" ]]; then
+    check_item "OK" "Telegram & Webhooks" "Telegram Bot (chat ${TELEGRAM_CHAT_ID}) + Webhook (${WEBHOOK_EVENTS}) active"
+  elif [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
+    check_item "OK" "Telegram & Webhooks" "Telegram Bot active (chat ${TELEGRAM_CHAT_ID} • events: ${WEBHOOK_EVENTS})"
+  elif [[ -n "${WEBHOOK_URL}" ]]; then
+    check_item "OK" "Telegram & Webhooks" "Webhook active (${WEBHOOK_EVENTS})"
   else
-    check_item "OK" "Webhook Notifications" "Desktop & Terminal Popup active (Webhook URL optional in syncalibur.env)"
+    check_item "OK" "Telegram & Webhooks" "Desktop & Terminal Popup active (set TELEGRAM_BOT_TOKEN in syncalibur.env for Telegram)"
   fi
 
   printf '\n  %s────────────────────────────────────────────────────────────────────────────────────────%s\n' "${C_SLATE}" "${C_RESET}"
@@ -2310,7 +2314,7 @@ install_global_cli_and_completions() {
 _syncalibur_completions() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
-  local cmds="install uninstall start stop restart status logs ui fleet doctor pull pause resume alert run"
+  local cmds="install uninstall start stop restart status logs ui fleet doctor notify pr pull sync pause resume alert run"
   if [[ ${COMP_CWORD} -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "${cmds}" -- "${cur}") )
     return
@@ -2318,6 +2322,7 @@ _syncalibur_completions() {
   case "${prev}" in
     fleet) COMPREPLY=( $(compgen -W "status add remove scan start stop" -- "${cur}") ) ;;
     alert) COMPREPLY=( $(compgen -W "--test --wait" -- "${cur}") ) ;;
+    pr)    COMPREPLY=( $(compgen -W "main --dry-run --preview" -- "${cur}") ) ;;
   esac
 }
 complete -F _syncalibur_completions syncalibur
@@ -2642,15 +2647,17 @@ cmd_logs() {
 usage() {
   print_syncalibur_dashboard
   cat << EOF
-  ${C_GOLD}${C_BOLD}Usage:${C_RESET} syncalibur ${C_CYAN}{install [path]|uninstall|start|stop|restart|status|logs|ui|fleet|doctor|pull|pause|resume|alert|run}${C_RESET}
+  ${C_GOLD}${C_BOLD}Usage:${C_RESET} syncalibur ${C_CYAN}{install [path]|uninstall|start|stop|restart|status|logs|ui|fleet|doctor|notify|pr|pull|pause|resume|alert|run}${C_RESET}
 
   ${C_GOLD}${C_BOLD}Commands:${C_RESET}
     ${C_CYAN}install [path]${C_RESET}         Configure OS auto-start, compile Go engine, link global CLI & start now
     ${C_CYAN}ui${C_RESET}                     Launch interactive live TUI cockpit (7-day sparkline + hotkeys [p/s/b/u/d/q])
-    ${C_CYAN}status${C_RESET}                 Show 2x2 subpixel emblem, live dashboard, velocity sparkline & recent logs
+    ${C_CYAN}status${C_RESET}                 Show TrueColor emblem, live dashboard, velocity sparkline & recent logs
     ${C_CYAN}logs${C_RESET}                   Stream live colorized telemetry
     ${C_CYAN}fleet <subcmd>${C_RESET}         Manage multi-repo fleet: ${C_WHITE}status | add <path> | remove <path> | scan [dir] | start | stop${C_RESET}
     ${C_CYAN}doctor${C_RESET}                 Run 10-point system diagnostic health check
+    ${C_CYAN}notify [msg]${C_RESET}           Send an instant test notification to Telegram Bot / Discord / Slack Webhooks
+    ${C_CYAN}pr [base|--preview]${C_RESET}    Open a structured Pull Request using Syncalibur's auto-populated PR Template
     ${C_CYAN}pull${C_RESET}                   Trigger immediate bidirectional remote fetch & safe rebase
     ${C_CYAN}pause | resume${C_RESET}         Pause or resume background auto-commits without stopping the service
     ${C_CYAN}alert [--test]${C_RESET}         Display full status + Sync Failed diagnostic report (or simulate with --test)
@@ -2671,6 +2678,11 @@ case "${1:-}" in
   ui)         cmd_ui ;;
   fleet)      cmd_fleet "${2:-status}" "${3:-}" ;;
   doctor)     cmd_doctor ;;
+  notify | telegram-test | webhook-test)
+    shift
+    cmd_notify "$@"
+    ;;
+  pr)         cmd_pr "${2:-main}" ;;
   pull)       cd "${REPO_ROOT}" && safe_bidirectional_sync "$(get_remote)" "$(get_branch || echo main)" 1 ;;
   sync)       touch "${SYNC_TRIGGER_FILE}" && echo "⚡ Triggered immediate sync cycle." ;;
   pause)      touch "${PAUSE_FILE}" && echo "⏸️  Syncalibur paused. Run 'syncalibur resume' to continue." ;;
