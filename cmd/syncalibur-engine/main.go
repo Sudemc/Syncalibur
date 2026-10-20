@@ -787,6 +787,10 @@ func detectSecretsInFile(filePath string) (bool, string) {
 	if err != nil {
 		return false, ""
 	}
+
+	ext := strings.ToLower(filepath.Ext(filePath))
+	isDocFile := ext == ".md" || ext == ".markdown" || ext == ".rst" || ext == ".txt"
+
 	lines := strings.Split(string(data), "\n")
 	for lineNum, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -804,6 +808,24 @@ func detectSecretsInFile(filePath string) (bool, string) {
 			continue
 		}
 
+		// In documentation files, only run entropy if line has credential context (or code fence)
+		if isDocFile {
+			hasCredContext := strings.Contains(lower, "key") || strings.Contains(lower, "secret") ||
+				strings.Contains(lower, "token") || strings.Contains(lower, "password") ||
+				strings.Contains(lower, "auth") || strings.Contains(lower, "credential") ||
+				strings.Contains(lower, "private") || strings.Contains(lower, "bearer") ||
+				strings.HasPrefix(trimmed, "```")
+			if !hasCredContext {
+				// Still check explicit known regex signatures
+				for _, re := range knownSecretRegexes {
+					if m := re.FindString(trimmed); m != "" {
+						return true, fmt.Sprintf("%s:%d (matches known credential signature)", filepath.Base(filePath), lineNum+1)
+					}
+				}
+				continue
+			}
+		}
+
 		for _, re := range knownSecretRegexes {
 			if m := re.FindString(trimmed); m != "" {
 				return true, fmt.Sprintf("%s:%d (matches known credential signature)", filepath.Base(filePath), lineNum+1)
@@ -816,11 +838,42 @@ func detectSecretsInFile(filePath string) (bool, string) {
 			if idx := strings.Index(w, "="); idx != -1 {
 				w = w[idx+1:]
 			}
-			w = strings.Trim(w, `"'=:,;()[]{}<>`)
+			w = strings.Trim(w, `"'=:,;()[]{}<>*`+"`")
 			if len(w) >= 24 {
-				// Exclude benign high-entropy assets: data URIs, base64 data, UUIDs, pure hex hashes
+				// Exclude benign high-entropy structures: data URIs, base64 data, UUIDs, pure hex hashes
 				if strings.HasPrefix(w, "data:") || strings.Contains(w, "base64,") ||
 					uuidRegex.MatchString(w) || pureHexRegex.MatchString(w) {
+					continue
+				}
+
+				// Exclude URLs, markdown links, file paths, template placeholders, CLI flags
+				if strings.Contains(w, "://") || strings.Contains(w, "http://") || strings.Contains(w, "https://") || strings.Contains(w, "ftp://") {
+					continue
+				}
+				if strings.Contains(w, "](") || strings.Contains(w, ")[") || strings.Contains(w, "[") || strings.Contains(w, "]") {
+					continue
+				}
+				if strings.Contains(w, "<") && strings.Contains(w, ">") {
+					continue
+				}
+				if strings.Count(w, "/") >= 2 || strings.Count(w, "\\") >= 2 {
+					continue
+				}
+				if strings.HasPrefix(w, "./") || strings.HasPrefix(w, "../") || strings.HasPrefix(w, "/") {
+					continue
+				}
+				if strings.Contains(w, "--") {
+					continue
+				}
+				if strings.Contains(w, "@") && strings.Contains(w, ".") {
+					continue
+				}
+				lowerW := strings.ToLower(w)
+				if strings.HasSuffix(lowerW, ".md") || strings.HasSuffix(lowerW, ".go") || strings.HasSuffix(lowerW, ".ts") ||
+					strings.HasSuffix(lowerW, ".tsx") || strings.HasSuffix(lowerW, ".json") || strings.HasSuffix(lowerW, ".yaml") ||
+					strings.HasSuffix(lowerW, ".yml") || strings.HasSuffix(lowerW, ".tf") || strings.HasSuffix(lowerW, ".png") ||
+					strings.HasSuffix(lowerW, ".jpg") || strings.HasSuffix(lowerW, ".html") || strings.HasSuffix(lowerW, ".css") ||
+					strings.HasSuffix(lowerW, ".sh") || strings.HasSuffix(lowerW, ".py") || strings.HasSuffix(lowerW, ".txt") {
 					continue
 				}
 
