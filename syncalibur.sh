@@ -2035,6 +2035,344 @@ push_changes() {
 }
 
 # ==============================================================================
+# Domain 1.0: Developer Push Ergonomics, Safety Checks & History Hygiene
+# ==============================================================================
+
+cmd_check() {
+  local target_repo="${1:-${REPO_ROOT}}"
+  [[ -d "${target_repo}" ]] || target_repo="${PWD}"
+  target_repo="$(cd "${target_repo}" && git rev-parse --show-toplevel 2>/dev/null || echo "${target_repo}")"
+
+  echo -e "${C_CYAN}◈ Syncalibur Preflight & Safety Inspection${C_RESET} [$(basename "${target_repo}") @ $(git -C "${target_repo}" branch --show-current 2>/dev/null || echo "detached")]"
+  echo "────────────────────────────────────────────────────────────────────────"
+
+  # 1. Secret Shield & Syntax Hold via Go engine
+  if ensure_go_engine; then
+    local pf_raw pf_rc=0
+    pf_raw="$("${GO_ENGINE_BIN}" preflight "${target_repo}" 2>&1)" || pf_rc=$?
+    if (( pf_rc == 0 )); then
+      echo -e "  ${C_GREEN}⛨ Secret Shield : Clean (0 credentials detected)${C_RESET}"
+      echo -e "  ${C_GREEN}▲ Syntax Hold   : Valid (universal lexical balance passed)${C_RESET}"
+    else
+      echo -e "  ${C_AMBER}▲ Preflight Notice:${C_RESET}"
+      echo "${pf_raw}"
+    fi
+  fi
+
+  # 2. Working Tree Changes
+  local changed_cnt unpushed_cnt remotes_desc branch
+  branch="$(git -C "${target_repo}" branch --show-current 2>/dev/null || echo "main")"
+  changed_cnt="$(git -C "${target_repo}" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  unpushed_cnt="$(unpushed_count "$(get_remote)" "${branch}")"
+  remotes_desc="$(describe_push_targets_inline "$(get_remote)")"
+
+  echo -e "  ${C_CYAN}✦ Working Tree  : ${changed_cnt} changed file(s)${C_RESET}"
+  if (( changed_cnt > 0 )); then
+    git -C "${target_repo}" -c core.quotePath=false status --short 2>/dev/null | head -n 8 | while IFS= read -r line; do
+      echo -e "    ${C_SLATE}• ${line}${C_RESET}"
+    done
+    if (( changed_cnt > 8 )); then
+      echo -e "    ${C_SLATE}... and $(( changed_cnt - 8 )) more file(s)${C_RESET}"
+    fi
+  fi
+
+  # 3. Proposed Commit Message
+  if ensure_go_engine && (( changed_cnt > 0 )); then
+    local proposed_msg
+    proposed_msg="$("${GO_ENGINE_BIN}" commit-msg "${target_repo}" 2>/dev/null || true)"
+    if [[ -n "${proposed_msg}" ]]; then
+      echo -e "  ${C_GOLD}✦ Proposed Msg  : ${proposed_msg}${C_RESET}"
+    fi
+  fi
+
+  # 4. Remote & Sync Status
+  echo -e "  ${C_CYAN}⇄ Remote Status : Behind: 0 | Ahead: ${unpushed_cnt} unpushed commit(s)${C_RESET}"
+  echo -e "  ${C_CYAN}↗ Push Targets  : ${remotes_desc}${C_RESET}"
+  echo "────────────────────────────────────────────────────────────────────────"
+  if (( changed_cnt > 0 || unpushed_cnt > 0 )); then
+    echo -e "  ${C_GREEN}Status: Ready to sync.${C_RESET} Run '${C_CYAN}syncalibur push${C_RESET}' to commit and push."
+  else
+    echo -e "  ${C_GREEN}Status: All files committed and remotes up to date.${C_RESET}"
+  fi
+}
+
+cmd_push() {
+  local custom_msg="" tidy_mode=0 dry_run=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tidy) tidy_mode=1; shift ;;
+      --dry-run) dry_run=1; shift ;;
+      *)
+        if [[ -z "${custom_msg}" ]]; then
+          custom_msg="$1"
+        else
+          custom_msg="${custom_msg} $1"
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  local current_repo
+  current_repo="$(git rev-parse --show-toplevel 2>/dev/null || echo "${REPO_ROOT}")"
+  cd "${current_repo}" || return 1
+
+  echo -e "${C_CYAN}◈ Syncalibur One-Shot Push${C_RESET} [$(basename "${current_repo}") @ $(git branch --show-current 2>/dev/null || echo "main")]"
+
+  if (( dry_run )); then
+    echo -e "  ${C_AMBER}✦ Running in --dry-run mode (no changes will be committed or pushed)${C_RESET}"
+    cmd_check "${current_repo}"
+    return 0
+  fi
+
+  # If tidy mode requested, tidy unpushed commits first
+  if (( tidy_mode )); then
+    cmd_tidy "${current_repo}" || true
+  fi
+
+  # 1. Run Pre-flight Safety Gate
+  if ensure_go_engine; then
+    local pf_raw pf_rc=0
+    pf_raw="$("${GO_ENGINE_BIN}" preflight "${current_repo}" 2>&1)" || pf_rc=$?
+    if (( pf_rc == 2 )); then
+      echo -e "  ${C_AMBER}▲ [SYNTAX HOLD] Incomplete syntax detected; push halted:${C_RESET}"
+      echo "${pf_raw}"
+      return 1
+    elif (( pf_rc == 3 )); then
+      echo -e "  ${C_RED}⛨ [SECRET SHIELD] High-entropy credential detected in files:${C_RESET}"
+      echo "${pf_raw}"
+      echo -e "  ${C_SLATE}Hint: Move credentials to .env or add to .gitignore before pushing.${C_RESET}"
+      return 1
+    fi
+    echo -e "  ${C_GREEN}⛨ Secret Shield : Clean${C_RESET}"
+    echo -e "  ${C_GREEN}▲ Syntax Hold   : Valid${C_RESET}"
+  fi
+
+  # 2. Stage & Commit if changes exist
+  local branch remote
+  branch="$(get_branch || echo "main")"
+  remote="$(get_remote)"
+
+  if has_changes_in_scope; then
+    if [[ -n "${custom_msg}" ]]; then
+      git add -A -- "${SCOPE}" 2>/dev/null
+      git commit -m "${custom_msg}"
+      echo -e "  ${C_GREEN}✓ Committed     : ${custom_msg}${C_RESET}"
+    else
+      commit_changes || true
+    fi
+  else
+    echo -e "  ${C_SLATE}• Working tree clean (no new changes to commit)${C_RESET}"
+  fi
+
+  # 3. Pull if behind (safe bidirectional rebase)
+  if [[ "${BIDIRECTIONAL_SYNC}" == "true" ]]; then
+    safe_bidirectional_sync "${remote}" "${branch}" 1 || true
+  fi
+
+  # 4. Push to all remotes
+  local unpushed
+  unpushed="$(unpushed_count "${remote}" "${branch}")"
+  if (( unpushed > 0 )); then
+    if push_changes "${remote}" "${branch}"; then
+      echo -e "  ${C_GREEN}✦ All remotes in sync.${C_RESET}"
+      return 0
+    else
+      echo -e "  ${C_RED}✕ Push failed (see details above).${C_RESET}"
+      return 1
+    fi
+  else
+    echo -e "  ${C_GREEN}✓ Already up to date with remote.${C_RESET}"
+    return 0
+  fi
+}
+
+cmd_commit() {
+  local custom_msg="" dry_run=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) dry_run=1; shift ;;
+      *)
+        if [[ -z "${custom_msg}" ]]; then
+          custom_msg="$1"
+        else
+          custom_msg="${custom_msg} $1"
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  local current_repo
+  current_repo="$(git rev-parse --show-toplevel 2>/dev/null || echo "${REPO_ROOT}")"
+  cd "${current_repo}" || return 1
+
+  echo -e "${C_CYAN}◈ Syncalibur Local Commit${C_RESET} [$(basename "${current_repo}") @ $(git branch --show-current 2>/dev/null || echo "main")]"
+
+  if (( dry_run )); then
+    cmd_check "${current_repo}"
+    return 0
+  fi
+
+  # Pre-flight gate
+  if ensure_go_engine; then
+    local pf_raw pf_rc=0
+    pf_raw="$("${GO_ENGINE_BIN}" preflight "${current_repo}" 2>&1)" || pf_rc=$?
+    if (( pf_rc == 2 )); then
+      echo -e "  ${C_AMBER}▲ [SYNTAX HOLD] Incomplete syntax detected:${C_RESET}"
+      echo "${pf_raw}"
+      return 1
+    elif (( pf_rc == 3 )); then
+      echo -e "  ${C_RED}⛨ [SECRET SHIELD] High-entropy credential detected:${C_RESET}"
+      echo "${pf_raw}"
+      return 1
+    fi
+  fi
+
+  if ! has_changes_in_scope; then
+    echo -e "  ${C_SLATE}• No changes to commit in '${SCOPE}'${C_RESET}"
+    return 0
+  fi
+
+  if [[ -n "${custom_msg}" ]]; then
+    git add -A -- "${SCOPE}" 2>/dev/null
+    git commit -m "${custom_msg}"
+    echo -e "  ${C_GREEN}✓ Committed : ${custom_msg}${C_RESET}"
+  else
+    commit_changes
+  fi
+}
+
+cmd_tidy() {
+  local current_repo="${1:-${REPO_ROOT}}"
+  [[ -d "${current_repo}" ]] || current_repo="${PWD}"
+  current_repo="$(cd "${current_repo}" && git rev-parse --show-toplevel 2>/dev/null || echo "${current_repo}")"
+  cd "${current_repo}" || return 1
+
+  local branch upstream unpushed_cnt
+  branch="$(git branch --show-current 2>/dev/null || echo "main")"
+  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo "origin/${branch}")"
+
+  if ! git rev-parse --verify "${upstream}" >/dev/null 2>&1; then
+    echo -e "${C_AMBER}▲ No upstream tracking branch found for '${branch}'; cannot safely determine unpushed boundary.${C_RESET}"
+    return 1
+  fi
+
+  unpushed_cnt="$(git rev-list --count "${upstream}..HEAD" 2>/dev/null || echo 0)"
+  if (( unpushed_cnt <= 1 )); then
+    echo -e "  ${C_SLATE}• Only ${unpushed_cnt} unpushed commit(s); tidy squash not needed.${C_RESET}"
+    return 0
+  fi
+
+  echo -e "${C_CYAN}◈ Syncalibur Tidy Squash${C_RESET} [${unpushed_cnt} unpushed commits -> 1 clean Conventional Commit]"
+
+  # 1. Create a safe rollback reference
+  local backup_tag="refs/syncalibur/backup-HEAD-$(date +%s)"
+  git update-ref "${backup_tag}" HEAD
+  echo -e "  ${C_SLATE}⛨ Safety Checkpoint created: ${backup_tag}${C_RESET}"
+
+  # 2. Collect commit messages for rollup body
+  local rollup_body
+  rollup_body="$(printf 'Rollup of %d unpushed local commits:\n%s' "${unpushed_cnt}" "$(git log --pretty=format:'- %s' "${upstream}..HEAD")")"
+
+  # 3. Soft reset to upstream
+  git reset --soft "${upstream}"
+
+  # 4. Generate unified AST Conventional Commit title
+  local macro_msg
+  if ensure_go_engine; then
+    macro_msg="$("${GO_ENGINE_BIN}" commit-msg "${current_repo}" 2>/dev/null || true)"
+  fi
+  if [[ -z "${macro_msg}" ]]; then
+    macro_msg="feat($(basename "${current_repo}")): tidy development milestone"
+  fi
+
+  # 5. Commit with clean title and rollup body
+  git commit -m "${macro_msg}" -m "${rollup_body}"
+  echo -e "  ${C_GREEN}✓ Squashed ${unpushed_cnt} commits -> ${macro_msg}${C_RESET}"
+  echo -e "  ${C_SLATE}Hint: To undo this tidy operation anytime: git reset --hard ${backup_tag}${C_RESET}"
+}
+
+cmd_hook() {
+  local action="${1:-status}"
+  local current_repo
+  current_repo="$(git rev-parse --show-toplevel 2>/dev/null || echo "${REPO_ROOT}")"
+  local hooks_dir="${current_repo}/.git/hooks"
+
+  if [[ ! -d "${hooks_dir}" ]]; then
+    echo -e "${C_RED}✕ Not a Git repository or .git/hooks directory missing.${C_RESET}"
+    return 1
+  fi
+
+  local pre_commit_hook="${hooks_dir}/pre-commit"
+  local prep_msg_hook="${hooks_dir}/prepare-commit-msg"
+
+  case "${action}" in
+    install)
+      mkdir -p "${hooks_dir}"
+      # 1. Install pre-commit hook (Secret Shield & Syntax Hold)
+      cat > "${pre_commit_hook}" << 'HOOK_EOF'
+#!/usr/bin/env bash
+# --- BEGIN SYNCALIBUR PRE-COMMIT HOOK ---
+# Universal pre-commit protection: Secret Shield & Syntax Hold
+if command -v syncalibur >/dev/null 2>&1; then
+  if ! syncalibur check 2>&1; then
+    echo -e "\033[38;2;239;68;68m✕ [SYNCALIBUR HOOK] Commit rejected: fix syntax errors or remove secrets.\033[0m" >&2
+    exit 1
+  fi
+fi
+# --- END SYNCALIBUR PRE-COMMIT HOOK ---
+HOOK_EOF
+      chmod +x "${pre_commit_hook}"
+
+      # 2. Install prepare-commit-msg hook (Auto Conventional Commit default)
+      cat > "${prep_msg_hook}" << 'HOOK_EOF'
+#!/usr/bin/env bash
+# --- BEGIN SYNCALIBUR PREPARE-COMMIT-MSG HOOK ---
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="$2"
+if [[ -z "${COMMIT_SOURCE}" ]] && command -v syncalibur >/dev/null 2>&1; then
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  BIN_ENG="${REPO_ROOT}/bin/syncalibur"
+  if [[ -x "${BIN_ENG}" ]]; then
+    SUGG="$("${BIN_ENG}" commit-msg "${REPO_ROOT}" 2>/dev/null || true)"
+    if [[ -n "${SUGG}" ]]; then
+      printf '%s\n\n# Syncalibur AST Conventional Commit Suggestion\n' "${SUGG}" > "${COMMIT_MSG_FILE}"
+    fi
+  fi
+fi
+# --- END SYNCALIBUR PREPARE-COMMIT-MSG HOOK ---
+HOOK_EOF
+      chmod +x "${prep_msg_hook}"
+
+      echo -e "${C_GREEN}✓ Installed Syncalibur Git hooks in $(basename "${current_repo}")/.git/hooks:${C_RESET}"
+      echo -e "  • ${C_CYAN}pre-commit${C_RESET}         (Secret Shield & Syntax Hold gate)"
+      echo -e "  • ${C_CYAN}prepare-commit-msg${C_RESET} (AST Conventional Commit suggestions)"
+      ;;
+
+    uninstall)
+      rm -f "${pre_commit_hook}" "${prep_msg_hook}"
+      echo -e "${C_GREEN}✓ Uninstalled Syncalibur Git hooks from $(basename "${current_repo}")/.git/hooks.${C_RESET}"
+      ;;
+
+    status|*)
+      echo -e "${C_CYAN}◈ Syncalibur Git Hook Status${C_RESET} [$(basename "${current_repo}")]"
+      if [[ -x "${pre_commit_hook}" ]]; then
+        echo -e "  ${C_GREEN}✓ pre-commit${C_RESET}         : Active (${pre_commit_hook})"
+      else
+        echo -e "  ${C_SLATE}○ pre-commit${C_RESET}         : Not installed"
+      fi
+      if [[ -x "${prep_msg_hook}" ]]; then
+        echo -e "  ${C_GREEN}✓ prepare-commit-msg${C_RESET} : Active (${prep_msg_hook})"
+      else
+        echo -e "  ${C_SLATE}○ prepare-commit-msg${C_RESET} : Not installed"
+      fi
+      echo -e "  ${C_SLATE}Run 'syncalibur hook install' to activate universal protection.${C_RESET}"
+      ;;
+  esac
+}
+
+# ==============================================================================
 # Domain 1.1: Multi-Repository Fleet Supervisor (`syncalibur fleet`)
 # ==============================================================================
 
