@@ -3,16 +3,16 @@
 # Syncalibur (syncalibur.sh) - Cross-Platform Autonomous Git Auto-Sync Platform
 # ------------------------------------------------------------------------------
 # Powered by a hybrid Bash + Go Engine (`cmd/syncalibur-engine/main.go`):
-#   - 2x2 Subpixel TrueColor Terminal Emblem & Live Dashboard
+#   - High-Definition TrueColor Terminal Emblem & Live Dashboard
 #   - Bidirectional Git Sync (`auto-pull --rebase`) with Safe Conflict Abort
 #   - Semantic Conventional Commit Generator (`feat(scope): ... (+X/-Y)`) + AI Hook
 #   - Native Filesystem Event Watcher (`inotifywait` / `fswatch` + Polling Fallback)
 #   - Multi-Repository Fleet Supervisor (`syncalibur fleet add|scan|status|start`)
 #   - Interactive Live TUI Cockpit (`syncalibur ui`) with 7-Day Commit Sparkline
-#   - Multi-Channel Webhooks (Discord, Slack, Telegram) + Failure Terminal Popup
+#   - First-Class Telegram Bot & Multi-Channel Webhooks (Discord, Slack, Telegram)
 #   - Self-Watching & Upstream Hot-Reload Auto-Updater + 10-Point `doctor` Suite
 #
-# Usage : syncalibur {install [path]|uninstall|start|stop|restart|status|logs|ui|fleet|doctor|pull|alert|run}
+# Usage : syncalibur {install [path]|uninstall|start|stop|restart|status|logs|ui|fleet|doctor|notify|pull|alert|run}
 # Docs  : ./README.md
 # ==============================================================================
 
