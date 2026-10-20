@@ -12,7 +12,7 @@
 [![Git Remotes](https://img.shields.io/badge/Multi--Remote-GitHub%20%2B%20GitLab%20%2B%20Self--Hosted-10b981?style=for-the-badge)](#what-is-syncalibur)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Protected%20Main%20%7C%201%20Review%20Required-a855f7?style=for-the-badge)](CONTRIBUTING.md)
 
-*Forge-grade background synchronization for your repositories — powered by a compiled Go core (`syncalibur-engine`) for sub-millisecond 2×2 Subpixel TrueColor emblem rendering, Semantic Conventional Commit generation, concurrent Multi-Repo Fleet orchestration, Multi-Channel Webhooks, and an Interactive Live TUI Cockpit.*
+*Forge-grade background synchronization for your repositories — powered by a compiled Go core (`syncalibur-engine`) for sub-millisecond TrueColor terminal emblem rendering, Semantic Conventional Commit generation, concurrent Multi-Repo Fleet orchestration, Telegram & Multi-Channel Webhooks, and an Interactive Live TUI Cockpit.*
 
 </div>
 
@@ -20,7 +20,7 @@
 
 ## Terminal Preview (`syncalibur status` & `syncalibur ui`)
 
-When you run `syncalibur status`, `syncalibur logs`, or `syncalibur ui`, the native Go engine renders [`assets/syncalibur-logo.png`](assets/syncalibur-logo.png) directly inside your terminal using **24-bit TrueColor ANSI escape sequences** and **2×2 Unicode Quadrant Subpixel Blocks** (`▘ ▝ ▀ ▖ ▌ ▞ ▛ ▗ ▚ ▐ ▜ ▄ ▙ ▟ █`) alongside live repository telemetry, verified accounts, and a 7-day commit velocity sparkline:
+When you run `syncalibur status`, `syncalibur logs`, or `syncalibur ui`, the native Go engine renders [`assets/syncalibur-logo.png`](assets/syncalibur-logo.png) directly inside your terminal using **24-bit TrueColor ANSI escape sequences** alongside live repository telemetry, verified accounts, and a 7-day commit velocity sparkline:
 
 <div align="center">
   <img src="assets/syncalibur-terminal.png" alt="Syncalibur Terminal Preview" width="960" />
@@ -44,7 +44,7 @@ cd ~/Syncalibur
 ./syncalibur.sh install /path/to/your/repo
 ```
 
-Once installed, the global `syncalibur` command is automatically linked into `~/.local/bin/syncalibur` so you can run `syncalibur ui`, `syncalibur status`, `syncalibur fleet`, or `syncalibur doctor` from any directory.
+Once installed, the global `syncalibur` command is automatically linked into `~/.local/bin/syncalibur` so you can run `syncalibur ui`, `syncalibur status`, `syncalibur fleet`, `syncalibur notify`, or `syncalibur doctor` from any directory.
 
 ---
 
@@ -57,18 +57,19 @@ Once installed, the global `syncalibur` command is automatically linked into `~/
   - `docs(README): update README.md (+85/-12)`
   - Optional local **Ollama AI Commit Hook** (`SYNCALIBUR_AI_COMMIT="true"`) with a strict 2-second non-blocking timeout and automatic heuristic fallback.
 - **Safe Bidirectional Sync (`--rebase --autostash`):** Periodically fetches from your primary remote (`origin`), detects when remote commits are ahead of local `HEAD`, and safely runs `git pull --rebase --autostash` when the working tree is clean. If a merge conflict is detected, Syncalibur **immediately aborts the rebase** (`git rebase --abort`), leaves your working tree untouched, and pops open a diagnostic terminal window.
+- **Protected Branch Auto-PR Fallback:** If a target branch (like `main`) is protected with required Pull Request reviews, Syncalibur automatically pushes a `sync/auto-*` branch and opens a Pull Request via `gh pr create`.
 - **Native Filesystem Event Watching (`inotifywait` / `fswatch`):** Zero-CPU event-driven watching when `inotifywait` (Linux) or `fswatch` (macOS) is installed, with automatic fallback to lightweight polling.
 - **Multi-Repository Fleet Supervisor (`repos.list`):** Watch 5, 10, or 50 repositories simultaneously! Run `syncalibur fleet scan ~/projects` to auto-discover all Git repositories using concurrent Go goroutines and supervise them in parallel.
 
-### 2. Interactive Live TUI Cockpit, Multi-Channel Webhooks & Diagnostics
-- **Interactive Live TUI Cockpit (`syncalibur ui`):** Full-screen, flicker-free terminal control center built in Go using raw terminal mode and alternate screen buffering. Features the 2×2 subpixel TrueColor emblem, live daemon telemetry, 7-day commit velocity sparkline (`▂█▅··▅▁`), remote matrix, live log stream, and single-keystroke hotkeys:
+### 2. Interactive Live TUI Cockpit, Telegram Bot Alerts & Diagnostics
+- **Interactive Live TUI Cockpit (`syncalibur ui`):** Full-screen, flicker-free terminal control center built in Go using raw terminal mode and alternate screen buffering. Features the high-definition TrueColor emblem, live daemon telemetry, 7-day commit velocity sparkline (`▂█▅··▅▁`), remote matrix, live log stream, and single-keystroke hotkeys:
   - `[p]` Pause / Resume Auto-Sync
   - `[s]` Force Immediate Commit & Push
   - `[b]` Force Bidirectional Pull (`--rebase`)
   - `[u]` Check & Apply Syncalibur Self-Update
   - `[d]` Run 10-Point System Doctor
   - `[q]` Quit TUI cleanly
-- **Multi-Channel Webhooks (`Discord`, `Slack`, `Telegram`, `Generic JSON`):** Configure `SYNCALIBUR_WEBHOOK_URL` (or Telegram Bot credentials) in `syncalibur.env` to receive instant rich notifications on push failures, rebase conflicts, self-updates, or every sync.
+- **Telegram Bot & Multi-Channel Webhooks (`Telegram`, `Discord`, `Slack`, `Generic JSON`):** Configure `SYNCALIBUR_TELEGRAM_BOT_TOKEN` & `SYNCALIBUR_TELEGRAM_CHAT_ID` (or `SYNCALIBUR_WEBHOOK_URL`) in `syncalibur.env` to receive instant rich notifications on push failures, rebase conflicts, self-updates, or every sync, and test anytime with `syncalibur notify` (`syncalibur telegram-test`).
 - **10-Point `syncalibur doctor` Diagnostic Suite:** Verifies Git identity, Go engine binary health, filesystem watcher availability, SSH connectivity (`github.com` / `gitlab.com`), `gh` / `glab` CLI authentication, OS background service registration, and remote push permissions.
 
 ---
@@ -88,9 +89,9 @@ flowchart TD
     G --> H["Go Engine: Semantic Commit Generator"]
     H --> I["git commit -m 'feat(scope): update ... (+X/-Y)'"]
     I --> J{"Multi-Remote Push"}
-    J -->|origin| K["GitHub"]
+    J -->|origin| K["GitHub (or Auto-PR if Protected)"]
     J -->|gitlab| L["GitLab / Self-Hosted"]
-    K --> M["Discord / Slack / Telegram Webhook"]
+    K --> M["Telegram / Discord / Slack Webhook"]
     L --> M
 ```
 
@@ -111,7 +112,7 @@ flowchart TD
    [4] Go Engine Semantic Commit   ──► Analyzes diff stats -> "feat(scope): update X (+42/-7)"
             │
             ▼
-   [5] Multi-Remote Push & Alert   ──► Pushes to GitHub + GitLab -> Dispatches Webhook / Alert Popup
+   [5] Multi-Remote Push & Alert   ──► Pushes to GitHub + GitLab -> Dispatches Telegram / Webhook
 ```
 
 ---
@@ -122,11 +123,12 @@ flowchart TD
 | :--- | :--- |
 | `syncalibur ui` | Launch the **Interactive Full-Screen Live TUI Cockpit** (`[p]` Pause, `[s]` Sync, `[b]` Pull, `[u]` Update, `[d]` Doctor, `[q]` Quit) |
 | `syncalibur install [PATH]` | Auto-detect repo, create missing remote repo if needed, link `~/.local/bin/syncalibur`, and start the OS service |
-| `syncalibur status` | Render the 2×2 Subpixel TrueColor emblem, 7-day commit sparkline, remote matrix, and recent events |
+| `syncalibur status` | Render the TrueColor emblem, 7-day commit sparkline, remote matrix, and recent events |
 | `syncalibur logs` | Render the emblem header and stream live color-coded log events (`tail -f`) |
 | `syncalibur sync` | Trigger an immediate one-shot bidirectional pull, semantic commit, and multi-remote push |
 | `syncalibur pull` | Trigger an immediate safe bidirectional pull (`git pull --rebase --autostash`) |
 | `syncalibur pause` / `resume` | Temporarily pause or resume background auto-commits without uninstalling the service |
+| `syncalibur notify [MSG]` | Send an instant test notification to your configured **Telegram Bot** (`syncalibur telegram-test`) and Webhook |
 | `syncalibur doctor` | Run the 10-point diagnostic health check (Git, Go Engine, inotify, SSH, `gh`/`glab`, remotes) |
 | `syncalibur fleet status` | Display a concurrent status table of all repositories in `repos.list` |
 | `syncalibur fleet scan [DIR]` | Recursively scan a directory for Git repositories using Go goroutines and append them to `repos.list` |
@@ -140,7 +142,7 @@ flowchart TD
 
 ## Configuration (`syncalibur.env.example` → `syncalibur.env`)
 
-Your personal `syncalibur.env` and `repos.list` files are **gitignored** so your local paths and webhook URLs are never pushed to GitHub. To customize settings, copy the template:
+Your personal `syncalibur.env` and `repos.list` files are **gitignored** so your local paths and webhook tokens are never pushed to GitHub. To customize settings, copy the template:
 
 ```bash
 cp syncalibur.env.example syncalibur.env
@@ -176,6 +178,38 @@ SYNCALIBUR_WEBHOOK_URL=""
 SYNCALIBUR_WEBHOOK_ON_SUCCESS="false"
 SYNCALIBUR_TELEGRAM_BOT_TOKEN=""
 SYNCALIBUR_TELEGRAM_CHAT_ID=""
+```
+
+---
+
+## Telegram Bot & Multi-Channel Webhook Alerts
+
+Syncalibur's Go engine includes a native multi-channel notification dispatcher supporting **Telegram Bot API**, **Discord Embeds**, **Slack Blocks**, and **Generic JSON Webhooks**.
+
+### 1. Configure Telegram Bot Alerts
+1. Message [@BotFather](https://t.me/BotFather) on Telegram and run `/newbot` to get your bot token.
+2. Obtain your chat or channel ID (for example via `@userinfobot` or `https://api.telegram.org/bot<TOKEN>/getUpdates`).
+3. Add your credentials to `syncalibur.env`:
+
+```dotenv
+SYNCALIBUR_TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+SYNCALIBUR_TELEGRAM_CHAT_ID="987654321"
+# Set to "true" if you also want notifications on every successful push (default: failures & conflicts only)
+SYNCALIBUR_WEBHOOK_ON_SUCCESS="true"
+```
+
+### 2. Configure Discord or Slack Webhooks (Optional)
+```dotenv
+SYNCALIBUR_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+```
+
+### 3. Test Your Notification Channel
+Verify your Telegram Bot or Webhook configuration at any time from your terminal:
+
+```bash
+syncalibur notify "Hello from Syncalibur!"
+# or
+syncalibur telegram-test
 ```
 
 ---
@@ -220,7 +254,7 @@ Syncalibur/
 │       ├── ci.yml                 # Automated Go build, ShellCheck & smoke test CI
 │       └── pr-governance.yml      # Automatic PR component & size labeler
 ├── assets/
-│   ├── syncalibur-logo.png        # Official Syncalibur Emblem (rendered in 2x2 TrueColor ANSI)
+│   ├── syncalibur-logo.png        # Official Syncalibur Emblem (rendered in TrueColor ANSI)
 │   └── syncalibur-terminal.png    # High-DPI screenshot of `syncalibur status`
 ├── cmd/
 │   └── syncalibur-engine/
