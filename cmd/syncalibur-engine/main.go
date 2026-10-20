@@ -2184,135 +2184,139 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 				continue
 			}
 
-			// Check ANSI escape sequences
-			if len(keys) >= 3 && keys[0] == 27 && keys[1] == '[' {
-				switch keys[2] {
-				case 'A': // Arrow Up
+			i := 0
+			shouldExit := false
+			for i < len(keys) {
+				if keys[i] == 27 { // Escape sequence
+					if i+2 < len(keys) && keys[i+1] == '[' {
+						seq := keys[i+2]
+						if (seq == '5' || seq == '6' || seq == '1' || seq == '4') && i+3 < len(keys) && keys[i+3] == '~' {
+							switch seq {
+							case '5': // Page Up
+								scrollOffset += 10
+								followMode = false
+							case '6': // Page Down
+								scrollOffset -= 10
+								if scrollOffset <= 0 {
+									scrollOffset = 0
+									followMode = true
+								}
+							case '1': // Home
+								scrollOffset = 9999
+								followMode = false
+							case '4': // End
+								scrollOffset = 0
+								followMode = true
+							}
+							i += 4
+							continue
+						}
+						switch seq {
+						case 'A': // Arrow Up
+							scrollOffset++
+							followMode = false
+						case 'B': // Arrow Down
+							if scrollOffset > 0 {
+								scrollOffset--
+								if scrollOffset == 0 {
+									followMode = true
+								}
+							}
+						case 'C': // Arrow Right (pan right)
+							horizOffset += 10
+						case 'D': // Arrow Left (pan left)
+							if horizOffset >= 10 {
+								horizOffset -= 10
+							} else {
+								horizOffset = 0
+							}
+						case 'H': // Home
+							scrollOffset = 9999
+							followMode = false
+						case 'F': // End
+							scrollOffset = 0
+							followMode = true
+						}
+						i += 3
+						continue
+					} else if i+1 == len(keys) {
+						// Lone Escape
+						shouldExit = true
+						break
+					}
+				}
+
+				// Single character
+				ch := keys[i]
+				i++
+				switch ch {
+				case 'q', 'Q', 3, 27: // q, Q, Ctrl+C, Esc -> INSTANT QUIT
+					shouldExit = true
+				case 'k', 'K': // vim scroll up
 					scrollOffset++
 					followMode = false
-					renderFrame()
-					continue
-				case 'B': // Arrow Down
+				case 'j', 'J': // vim scroll down
 					if scrollOffset > 0 {
 						scrollOffset--
 						if scrollOffset == 0 {
 							followMode = true
 						}
 					}
-					renderFrame()
-					continue
-				case 'C': // Arrow Right (pan right)
-					horizOffset += 10
-					renderFrame()
-					continue
-				case 'D': // Arrow Left (pan left)
+				case 'h', 'H': // vim pan left
 					if horizOffset >= 10 {
 						horizOffset -= 10
 					} else {
 						horizOffset = 0
 					}
-					renderFrame()
-					continue
-				case '5': // Page Up
-					scrollOffset += 10
-					followMode = false
-					renderFrame()
-					continue
-				case '6': // Page Down
-					scrollOffset -= 10
-					if scrollOffset <= 0 {
-						scrollOffset = 0
-						followMode = true
-					}
-					renderFrame()
-					continue
-				case 'H', '1': // Home
-					scrollOffset = 9999
-					followMode = false
-					renderFrame()
-					continue
-				case 'F', '4': // End
+				case 'l', 'L': // vim pan right
+					horizOffset += 10
+				case '0': // reset pan
+					horizOffset = 0
+				case 'f', 'F': // tail / follow mode
 					scrollOffset = 0
 					followMode = true
-					renderFrame()
-					continue
+				case 'g': // top
+					scrollOffset = 9999
+					followMode = false
+				case 'G': // bottom
+					scrollOffset = 0
+					followMode = true
+				case 'p', 'P': // Pause / Resume
+					pauseFile := filepath.Join(gitDir, "syncalibur.pause")
+					if _, err := os.Stat(pauseFile); err == nil {
+						_ = os.Remove(pauseFile)
+						flashMsg = fmt.Sprintf("%s%s %sRESUMED:%s Autonomous sync loop resumed.", cGreen, iconPlay, cBold, cReset)
+					} else {
+						_ = os.WriteFile(pauseFile, []byte("1\n"), 0644)
+						flashMsg = fmt.Sprintf("%s%s %sPAUSED:%s Daemon paused. Press [p] again to resume.", cAmber, iconPause, cBold, cReset)
+					}
+					flashUntil = time.Now().Add(3 * time.Second)
+				case 's', 'S': // Sync now
+					_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.sync"), []byte("1\n"), 0644)
+					flashMsg = fmt.Sprintf("%s%s %sSYNC NOW:%s Immediate commit & push triggered!", cCyan, iconZap, cBold, cReset)
+					flashUntil = time.Now().Add(3 * time.Second)
+				case 'b', 'B': // Bidirectional pull
+					_ = exec.Command("bash", scriptPath, "pull").Run()
+					flashMsg = fmt.Sprintf("%s%s %sBIDIRECTIONAL PULL:%s Checked upstream & rebased cleanly.", cCyan, iconSync, cBold, cReset)
+					flashUntil = time.Now().Add(3 * time.Second)
+				case 'u', 'U': // Self-update
+					_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.upd"), []byte("1\n"), 0644)
+					flashMsg = fmt.Sprintf("%s%s %sSELF-UPDATE:%s Upstream self-update check triggered.", cGold, iconSync, cBold, cReset)
+					flashUntil = time.Now().Add(3 * time.Second)
+				case 'd', 'D': // Doctor
+					flashMsg = fmt.Sprintf("%s%s %sDOCTOR:%s Running 11-point diagnostic check...", cGreen, iconDoctor, cBold, cReset)
+					flashUntil = time.Now().Add(3 * time.Second)
+				case 'r', 'R': // Redraw
+				}
+				if shouldExit {
+					break
 				}
 			}
 
-			// Single keys
-			switch keys[0] {
-			case 'q', 'Q', 3, 27: // q, Q, Ctrl+C, Esc -> INSTANT QUIT
+			if shouldExit {
 				return
-			case 'k', 'K': // vim scroll up
-				scrollOffset++
-				followMode = false
-				renderFrame()
-			case 'j', 'J': // vim scroll down
-				if scrollOffset > 0 {
-					scrollOffset--
-					if scrollOffset == 0 {
-						followMode = true
-					}
-				}
-				renderFrame()
-			case 'h', 'H': // vim pan left
-				if horizOffset >= 10 {
-					horizOffset -= 10
-				} else {
-					horizOffset = 0
-				}
-				renderFrame()
-			case 'l', 'L': // vim pan right
-				horizOffset += 10
-				renderFrame()
-			case '0': // reset pan
-				horizOffset = 0
-				renderFrame()
-			case 'f', 'F': // tail / follow mode
-				scrollOffset = 0
-				followMode = true
-				renderFrame()
-			case 'g': // top
-				scrollOffset = 9999
-				followMode = false
-				renderFrame()
-			case 'G': // bottom
-				scrollOffset = 0
-				followMode = true
-				renderFrame()
-			case 'p', 'P': // Pause / Resume
-				pauseFile := filepath.Join(gitDir, "syncalibur.pause")
-				if _, err := os.Stat(pauseFile); err == nil {
-					_ = os.Remove(pauseFile)
-					flashMsg = fmt.Sprintf("%s%s %sRESUMED:%s Autonomous sync loop resumed.", cGreen, iconPlay, cBold, cReset)
-				} else {
-					_ = os.WriteFile(pauseFile, []byte("1\n"), 0644)
-					flashMsg = fmt.Sprintf("%s%s %sPAUSED:%s Daemon paused. Press [p] again to resume.", cAmber, iconPause, cBold, cReset)
-				}
-				flashUntil = time.Now().Add(3 * time.Second)
-				renderFrame()
-			case 's', 'S': // Sync now
-				_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.sync"), []byte("1\n"), 0644)
-				flashMsg = fmt.Sprintf("%s%s %sSYNC NOW:%s Immediate commit & push triggered!", cCyan, iconZap, cBold, cReset)
-				flashUntil = time.Now().Add(3 * time.Second)
-				renderFrame()
-			case 'b', 'B': // Bidirectional pull
-				_ = exec.Command("bash", scriptPath, "pull").Run()
-				flashMsg = fmt.Sprintf("%s%s %sBIDIRECTIONAL PULL:%s Checked upstream & rebased cleanly.", cCyan, iconSync, cBold, cReset)
-				flashUntil = time.Now().Add(3 * time.Second)
-				renderFrame()
-			case 'u', 'U': // Self-update
-				_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.upd"), []byte("1\n"), 0644)
-				flashMsg = fmt.Sprintf("%s%s %sSELF-UPDATE:%s Upstream self-update check triggered.", cGold, iconSync, cBold, cReset)
-				flashUntil = time.Now().Add(3 * time.Second)
-				renderFrame()
-			case 'd', 'D': // Doctor
-				flashMsg = fmt.Sprintf("%s%s %sDOCTOR:%s Running 11-point diagnostic check...", cGreen, iconDoctor, cBold, cReset)
-				flashUntil = time.Now().Add(3 * time.Second)
-				renderFrame()
-			case 'r', 'R': // Redraw
-				renderFrame()
 			}
+			renderFrame()
 
 		case <-ticker.C:
 			renderFrame()
