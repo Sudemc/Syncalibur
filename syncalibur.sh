@@ -3188,7 +3188,7 @@ case "${1:-}" in
   commit)     shift; cmd_commit "$@" ;;
   check | preflight) shift; cmd_check "${1:-}" ;;
   tidy)       shift; cmd_tidy "${1:-}" ;;
-  hook)       shift; cmd_hook "${2:-status}" ;;
+  hook)       shift; cmd_hook "${1:-status}" ;;
   install)    cmd_install "${2:-}" ;;
   uninstall)  cmd_uninstall ;;
   start)      cmd_start ;;
