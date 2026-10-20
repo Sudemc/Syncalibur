@@ -141,15 +141,22 @@ func main() {
 // ==============================================================================
 
 func runDaemonSupervisor(scriptPath string, extraArgs ...string) int {
-	args := append([]string{scriptPath}, extraArgs...)
-	cmd := exec.Command("bash", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("SYNCALIBUR_SUPERVISOR_PID=%d", os.Getpid()),
-		"SYNCALIBUR_WRAPPED=1",
-	)
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		bashBin = "/bin/bash"
+	}
+	args := append([]string{"syncalibur", scriptPath}, extraArgs...)
+	cmd := &exec.Cmd{
+		Path:   bashBin,
+		Args:   args,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		Stdin:  os.Stdin,
+		Env: append(os.Environ(),
+			fmt.Sprintf("SYNCALIBUR_SUPERVISOR_PID=%d", os.Getpid()),
+			"SYNCALIBUR_WRAPPED=1",
+		),
+	}
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "syncalibur supervisor start error: %v\n", err)
