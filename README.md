@@ -270,7 +270,8 @@ Syncalibur/
 │   └── syncalibur-terminal.png    # High-DPI screenshot of `syncalibur status`
 ├── cmd/
 │   └── syncalibur-engine/
-│       └── main.go                # Go Core Engine (PNG Renderer, Semantic Commits, Fleet, Webhooks, Live TUI)
+│       ├── main.go                # Go Core Engine (PNG Renderer, AST Commits, Fleet, Webhooks, Live TUI)
+│       └── main_test.go           # Go Unit Tests (Shannon Entropy, Secret Shield, Syntax & AST)
 ├── CONTRIBUTING.md                # Contributor & Pull Request workflow guide
 ├── go.mod                         # Go module definition (zero external dependencies)
 ├── install.sh                     # 1-Liner public curl|bash installer
