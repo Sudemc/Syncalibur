@@ -1735,8 +1735,19 @@ trim_log() {
 }
 
 repo_busy() {
-  local marker
-  for marker in index.lock MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG rebase-merge rebase-apply; do
+  local marker lock_age
+  # 1. Stale index.lock recovery: if index.lock is >120s old and no git process is running, auto-heal
+  if [[ -e "${GIT_DIR}/index.lock" ]]; then
+    lock_age=$(( $(date +%s) - $(file_mtime_epoch "${GIT_DIR}/index.lock" 2>/dev/null || echo 0) ))
+    if (( lock_age > 120 )); then
+      if ! pgrep -f "git.*${REPO_ROOT##*/}" >/dev/null 2>&1; then
+        log "▲ Auto-healed stale '${GIT_DIR}/index.lock' (${lock_age}s old; no active git process)."
+        rm -f "${GIT_DIR}/index.lock" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  for marker in index.lock MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG BISECT_START rebase-merge rebase-apply sequencer AUTO_MERGE; do
     if [[ -e "${GIT_DIR}/${marker}" ]]; then
       echo "${marker}"
       return 0
