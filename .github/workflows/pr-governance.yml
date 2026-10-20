@@ -1,0 +1,81 @@
+name: PR Governance & Auto-Labeler
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  triage:
+    name: Validate PR & Apply Labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Base Repository
+        uses: actions/checkout@v4
+
+      - name: Auto-Label PR by Changed Paths & Size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+
+            const labels = new Set();
+            let totalChanges = 0;
+
+            for (const f of files) {
+              totalChanges += (f.additions || 0) + (f.deletions || 0);
+              if (f.filename.startsWith('cmd/') || f.filename.endsWith('.go') || f.filename === 'go.mod') {
+                labels.add('go-engine');
+              }
+              if (f.filename.endsWith('.sh')) {
+                labels.add('shell-daemon');
+              }
+              if (f.filename.endsWith('.md') || f.filename.startsWith('docs/')) {
+                labels.add('documentation');
+              }
+              if (f.filename.startsWith('.github/')) {
+                labels.add('ci-cd');
+              }
+            }
+
+            if (totalChanges < 50) {
+              labels.add('size/S');
+            } else if (totalChanges < 250) {
+              labels.add('size/M');
+            } else {
+              labels.add('size/L');
+            }
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name: label,
+                  color: '0ea5e9',
+                });
+              }
+            }
+
+            if (labels.size > 0) {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: prNumber,
+                labels: Array.from(labels),
+              });
+            }
