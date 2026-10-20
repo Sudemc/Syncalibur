@@ -1381,22 +1381,22 @@ safe_bidirectional_sync() {
   fi
 
   if (( behind > 0 && ahead == 0 )); then
-    log "📥 Bidirectional Sync: Remote '${fetch_remote}/${branch}' has ${behind} new commit(s). Fast-forwarding..."
+    log "↙ Bidirectional Sync: Remote '${fetch_remote}/${branch}' has ${behind} new commit(s). Fast-forwarding..."
     local ff_out
     if ff_out="$(git merge --ff-only "${upstream}" 2>&1)"; then
       printf '%s\n' "${ff_out}" >> "${LOG_FILE}"
-      log "🎉 Fast-forward pull succeeded (HEAD @ $(git rev-parse --short HEAD))."
+      log "✓ Fast-forward pull succeeded (HEAD @ $(git rev-parse --short HEAD))."
       clear_sync_failure
       return 0
     fi
   fi
 
   if (( behind > 0 && ahead > 0 )); then
-    log "🔀 Bidirectional Sync: Divergent history (${ahead} local, ${behind} remote). Rebasing cleanly..."
+    log "⇄ Bidirectional Sync: Divergent history (${ahead} local, ${behind} remote). Rebasing cleanly..."
     local rb_out
     if rb_out="$(git rebase "${upstream}" 2>&1)"; then
       printf '%s\n' "${rb_out}" >> "${LOG_FILE}"
-      log "🎉 Rebase succeeded! Replayed ${ahead} local commit(s) onto '${fetch_remote}/${branch}'."
+      log "✓ Rebase succeeded! Replayed ${ahead} local commit(s) onto '${fetch_remote}/${branch}'."
       clear_sync_failure
       return 0
     else
@@ -1405,7 +1405,7 @@ safe_bidirectional_sync() {
       conflict_files="$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ' || true)"
       git rebase --abort >/dev/null 2>&1 || true
       local err_msg="Merge conflict during auto-rebase (${conflict_files:-conflicting changes}); cleanly aborted rebase to protect working tree"
-      log "❌ ${err_msg}."
+      log "✕ ${err_msg}."
       trigger_failure_alert "BIDIRECTIONAL SYNC (CONFLICT)" "${err_msg}" "${rb_out}" "${remote}" "${branch}"
       return 1
     fi
