@@ -1,9 +1,14 @@
-# Personal configuration (never push personal paths or tokens)
+# Personal configuration (never push personal paths, fleet lists, or webhooks)
 syncalibur.env
+repos.list
 .env
 .env.*
 !syncalibur.env.example
+!repos.list.example
 !.env.example
+
+# Compiled Go engine binary (built automatically per machine/OS)
+bin/
 
 # Syncalibur runtime state files
 *.pid
@@ -12,4 +17,8 @@ syncalibur.env
 *.auth
 *.failure
 *.alert_ts
+*.stats
+*.pause
+*.sync
+*.upd
 .DS_Store
