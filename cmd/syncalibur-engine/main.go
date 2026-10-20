@@ -1160,7 +1160,7 @@ type preflightJSONResult struct {
 
 func runPreflight(repoRoot string, stagedOnly, jsonOutput bool) (int, string) {
 	var files []string
-	gitArgs := []string{"-C", repoRoot, "diff"}
+	gitArgs := []string{"-C", repoRoot, "-c", "core.quotePath=false", "diff"}
 	if stagedOnly {
 		gitArgs = append(gitArgs, "--cached")
 	}
@@ -1177,7 +1177,7 @@ func runPreflight(repoRoot string, stagedOnly, jsonOutput bool) (int, string) {
 
 	// Also inspect untracked files if not staged-only
 	if !stagedOnly {
-		untrackedOut, err := exec.Command("git", "-C", repoRoot, "ls-files", "--others", "--exclude-standard").Output()
+		untrackedOut, err := exec.Command("git", "-C", repoRoot, "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard").Output()
 		if err == nil {
 			for _, f := range strings.Split(strings.TrimSpace(string(untrackedOut)), "\n") {
 				if f = strings.TrimSpace(f); f != "" {
