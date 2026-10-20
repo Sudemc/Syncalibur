@@ -851,9 +851,14 @@ func checkLexicalBalance(src []byte, ext string) (bool, string) {
 	inDoubleQuote := false
 	inSingleQuote := false
 	inBacktick := false
+	inTripleDoubleQuote := false
+	inTripleSingleQuote := false
 	escaped := false
 
 	isRust := ext == ".rs"
+	isPython := ext == ".py"
+	isBash := ext == ".sh" || ext == ".bash"
+	isHashComment := ext == ".py" || ext == ".sh" || ext == ".bash" || ext == ".yaml" || ext == ".yml" || ext == ".rb" || ext == ".toml" || ext == ".r"
 
 	for i := 0; i < n; i++ {
 		ch := runes[i]
@@ -874,6 +879,30 @@ func checkLexicalBalance(src []byte, ext string) (bool, string) {
 			if ch == '*' && i+1 < n && runes[i+1] == '/' {
 				inBlockComment = false
 				i++
+			}
+			continue
+		}
+
+		if inTripleDoubleQuote {
+			if ch == '"' && i+2 < n && runes[i+1] == '"' && runes[i+2] == '"' && !escaped {
+				inTripleDoubleQuote = false
+				i += 2
+			} else if ch == '\\' && !escaped {
+				escaped = true
+			} else {
+				escaped = false
+			}
+			continue
+		}
+
+		if inTripleSingleQuote {
+			if ch == '\'' && i+2 < n && runes[i+1] == '\'' && runes[i+2] == '\'' && !escaped {
+				inTripleSingleQuote = false
+				i += 2
+			} else if ch == '\\' && !escaped {
+				escaped = true
+			} else {
+				escaped = false
 			}
 			continue
 		}
@@ -909,7 +938,26 @@ func checkLexicalBalance(src []byte, ext string) (bool, string) {
 			continue
 		}
 
+		// Check Python multiline triple quotes
+		if isPython {
+			if ch == '"' && i+2 < n && runes[i+1] == '"' && runes[i+2] == '"' {
+				inTripleDoubleQuote = true
+				i += 2
+				continue
+			}
+			if ch == '\'' && i+2 < n && runes[i+1] == '\'' && runes[i+2] == '\'' {
+				inTripleSingleQuote = true
+				i += 2
+				continue
+			}
+		}
+
 		// Check comment starts
+		if isHashComment && ch == '#' {
+			inLineComment = true
+			continue
+		}
+
 		if ch == '/' && i+1 < n {
 			if runes[i+1] == '/' {
 				inLineComment = true
@@ -941,6 +989,10 @@ func checkLexicalBalance(src []byte, ext string) (bool, string) {
 			stack = append(stack, bracketToken{char: ch, line: line})
 		} else if ch == '}' || ch == ')' || ch == ']' {
 			if len(stack) == 0 {
+				// In Bash, case patterns end with a lone ')' (e.g. pattern) cmd ;; esac)
+				if isBash && ch == ')' {
+					continue
+				}
 				return false, fmt.Sprintf("line %d: unexpected closing '%c' with no matching open bracket", line, ch)
 			}
 			top := stack[len(stack)-1]
@@ -949,16 +1001,26 @@ func checkLexicalBalance(src []byte, ext string) (bool, string) {
 			if (ch == '}' && top.char != '{') ||
 				(ch == ')' && top.char != '(') ||
 				(ch == ']' && top.char != '[') {
+				if isBash && ch == ')' && top.char != '(' {
+					stack = append(stack, top)
+					continue
+				}
 				return false, fmt.Sprintf("line %d: mismatched closing '%c' (expected closing for '%c' from line %d)", line, ch, top.char, top.line)
 			}
 		}
 	}
 
+	if inTripleDoubleQuote || inTripleSingleQuote {
+		return false, "unclosed multiline docstring spanning to end of file"
+	}
 	if inBlockComment {
 		return false, "unclosed block comment '/*' spanning to end of file"
 	}
 	if inDoubleQuote {
 		return false, "unclosed string literal '\"' spanning to end of file"
+	}
+	if inSingleQuote {
+		return false, "unclosed single quote literal ''' spanning to end of file"
 	}
 	if inBacktick {
 		return false, "unclosed template literal '`' spanning to end of file"
@@ -987,7 +1049,7 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 		}
 	case ".py":
 		if _, err := exec.LookPath("python3"); err == nil {
-			cmd := exec.Command("python3", "-m", "py_compile", absPath)
+			cmd := exec.Command("python3", "-B", "-m", "py_compile", absPath)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				errMsg := strings.TrimSpace(string(out))
 				if errMsg == "" {
@@ -1022,10 +1084,10 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 			tscBin = p
 		}
 		if tscBin != "" {
-			cmd := exec.Command(tscBin, "--noEmit", "--skipLibCheck", absPath)
+			cmd := exec.Command(tscBin, "--noEmit", "--skipLibCheck", "--jsx", "react-jsx", absPath)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				errMsg := strings.TrimSpace(string(out))
-				if errMsg != "" {
+				if errMsg != "" && !strings.Contains(errMsg, "Cannot find module") && !strings.Contains(errMsg, "Cannot find name") {
 					lines := strings.Split(errMsg, "\n")
 					return false, fmt.Sprintf("%s: %s", relPath, lines[0])
 				}
@@ -1042,7 +1104,7 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 				cmd := exec.Command(javac, "-nowarn", "-d", tmpDir, absPath)
 				if out, err := cmd.CombinedOutput(); err != nil {
 					errMsg := strings.TrimSpace(string(out))
-					if errMsg != "" {
+					if errMsg != "" && !strings.Contains(errMsg, "cannot find symbol") && !strings.Contains(errMsg, "does not exist") {
 						lines := strings.Split(errMsg, "\n")
 						return false, fmt.Sprintf("%s: %s", relPath, lines[0])
 					}
@@ -1085,6 +1147,8 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 			return false, fmt.Sprintf("%s: %s", relPath, reason)
 		}
 	}
+	return true, ""
+}
 	return true, ""
 }
 
