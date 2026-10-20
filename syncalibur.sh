@@ -699,7 +699,7 @@ auto_create_or_bind_remote() {
 }
 
 # ==============================================================================
-# Terminal Theme, 2x2 Subpixel PNG Avatar Renderer & Styled Log Formatter
+# Terminal Theme, High-Definition PNG Emblem Renderer & Styled Log Formatter
 # ==============================================================================
 
 C_RESET=$'\033[0m'
@@ -716,6 +716,62 @@ C_WHITE=$'\033[38;2;241;245;249m'
 ensure_logo_ansi() {
   [[ -f "${LOGO_ANSI_FILE}" ]] && return 0
   [[ -f "${LOGO_PNG_FILE}" ]] || return 1
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import PIL" >/dev/null 2>&1; then
+    python3 - "${LOGO_PNG_FILE}" "${LOGO_ANSI_FILE}" 2>/dev/null << 'PY' && return 0
+import sys
+from PIL import Image, ImageEnhance, ImageFilter
+QUADS = [" ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█"]
+src, dst = sys.argv[1], sys.argv[2]
+im = Image.open(src).convert("RGBA")
+bbox = im.getbbox()
+if bbox:
+    im = im.crop(bbox)
+COLS, ROWS = 44, 21
+im_sub = im.resize((COLS * 2, ROWS * 2), Image.Resampling.LANCZOS)
+rgb = im_sub.convert("RGB").filter(ImageFilter.UnsharpMask(radius=1.1, percent=175, threshold=2))
+rgb = ImageEnhance.Color(ImageEnhance.Contrast(rgb).enhance(1.22)).enhance(1.25)
+px_rgb, px_a = rgb.load(), im_sub.split()[3].load()
+lines = []
+for cy in range(ROWS):
+    row = []
+    for cx in range(COLS):
+        coords = [(cx*2, cy*2), (cx*2+1, cy*2), (cx*2, cy*2+1), (cx*2+1, cy*2+1)]
+        alphas = [px_a[x, y] for x, y in coords]
+        colors = [px_rgb[x, y] for x, y in coords]
+        mask, active = 0, []
+        for i, a in enumerate(alphas):
+            if a >= 85:
+                if a < 220:
+                    f = a / 255.0
+                    colors[i] = (int(colors[i][0]*f), int(colors[i][1]*f), int(colors[i][2]*f))
+                mask |= (1 << i); active.append(i)
+        if mask == 0:
+            row.append("\033[0m ")
+        elif mask != 15:
+            r = sum(colors[i][0] for i in active) // len(active)
+            g = sum(colors[i][1] for i in active) // len(active)
+            b = sum(colors[i][2] for i in active) // len(active)
+            row.append(f"\033[0m\033[38;2;{r};{g};{b}m{QUADS[mask]}")
+        else:
+            best_err, best_m, best_fg, best_bg = 1e18, 3, colors[0], colors[2]
+            for m in range(1, 8):
+                g1 = [colors[i] for i in range(4) if (m >> i) & 1]
+                g2 = [colors[i] for i in range(4) if not ((m >> i) & 1)]
+                c1 = tuple(sum(c[k] for c in g1) // len(g1) for k in range(3))
+                c2 = tuple(sum(c[k] for c in g2) // len(g2) for k in range(3))
+                err = sum(sum((c[k]-c1[k])**2 for k in range(3)) for c in g1) + sum(sum((c[k]-c2[k])**2 for k in range(3)) for c in g2)
+                if m == 3:
+                    err *= 0.92
+                if err < best_err:
+                    best_err, best_m, best_fg, best_bg = err, m, c1, c2
+            r1, g1, b1 = best_fg; r2, g2, b2 = best_bg
+            row.append(f"\033[38;2;{r1};{g1};{b1}m\033[48;2;{r2};{g2};{b2}m{QUADS[best_m]}")
+    row.append("\033[0m")
+    lines.append("".join(row))
+with open(dst, "w") as f:
+    f.write("\n".join(lines) + "\n")
+PY
+  fi
   if ensure_go_engine; then
     "${GO_ENGINE_BIN}" render-logo "${LOGO_PNG_FILE}" "${LOGO_ANSI_FILE}" 2>/dev/null && return 0
   fi
@@ -777,6 +833,31 @@ format_log_line() {
       "${msg_color}" "${msg}" "${C_RESET}"
   else
     printf '           %s│ %s%s\n' "${C_SLATE}" "${raw}" "${C_RESET}"
+  fi
+}
+
+describe_notify_channels() {
+  local -a ch=()
+  if [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
+    ch+=("${C_CYAN}✔ Telegram Bot${C_RESET}")
+  fi
+  if [[ -n "${WEBHOOK_URL}" ]]; then
+    local lurl="${WEBHOOK_URL,,}"
+    if [[ "${lurl}" == *"discord"* ]]; then
+      ch+=("${C_CYAN}✔ Discord Webhook${C_RESET}")
+    elif [[ "${lurl}" == *"slack.com"* ]]; then
+      ch+=("${C_CYAN}✔ Slack Webhook${C_RESET}")
+    elif [[ "${lurl}" == *"api.telegram.org"* ]]; then
+      ch+=("${C_CYAN}✔ Telegram Webhook${C_RESET}")
+    else
+      ch+=("${C_CYAN}✔ Custom Webhook${C_RESET}")
+    fi
+  fi
+  if (( ${#ch[@]} == 0 )); then
+    printf '%s' "${C_CYAN}✔ Alert Popup${C_RESET}"
+  else
+    local IFS=" ${C_SLATE}•${C_RESET} "
+    printf '%s' "${ch[*]} ${C_SLATE}•${C_RESET} ${C_CYAN}✔ Alert Popup${C_RESET}"
   fi
 }
 
@@ -862,7 +943,9 @@ print_syncalibur_dashboard() {
     self_str="${C_SLATE}Disabled${C_RESET}"
   fi
 
-  local autorepo_str="${C_GREEN}✔ Bi-Sync${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✔ Semantic Commits${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✔ Auto-Repo (${REPO_VISIBILITY})${C_RESET} ${C_SLATE}•${C_RESET} ${C_CYAN}✔ Alert Popup${C_RESET}"
+  local notify_str
+  notify_str="$(describe_notify_channels)"
+  local autorepo_str="${C_GREEN}✔ Bi-Sync${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✔ Semantic Commits${C_RESET} ${C_SLATE}•${C_RESET} ${C_GREEN}✔ Auto-Repo (${REPO_VISIBILITY})${C_RESET} ${C_SLATE}•${C_RESET} ${notify_str}"
 
   cfg_short="${CONFIG_FILE:-<defaults>}"
   cfg_short="${cfg_short/#${HOME}/~}"
@@ -893,7 +976,7 @@ print_syncalibur_dashboard() {
     "  ${C_GOLD}◈${C_RESET} ${C_BOLD}Velocity  :${C_RESET} ${unpushed_str}"
     "  ${C_GOLD}◈${C_RESET} ${C_BOLD}Shield    :${C_RESET} ${C_SLATE}Poll ${POLL_INTERVAL}s • Debounce ${DEBOUNCE_WAIT}s • ≤ ${MAX_FILE_SIZE_MB} MiB & Secret Guard${C_RESET}"
     "  ${C_SLATE}──────────────────────────────────────────────────────────────────────${C_RESET}"
-    "  ${C_SLATE}Commands  : ${C_CYAN}ui${C_SLATE} | ${C_CYAN}status${C_SLATE} | ${C_CYAN}logs${C_SLATE} | ${C_CYAN}fleet${C_SLATE} | ${C_CYAN}doctor${C_SLATE} | ${C_CYAN}alert${C_SLATE} | ${C_CYAN}restart${C_SLATE} | ${C_CYAN}install${C_RESET}"
+    "  ${C_SLATE}Commands  : ${C_CYAN}ui${C_SLATE} | ${C_CYAN}status${C_SLATE} | ${C_CYAN}logs${C_SLATE} | ${C_CYAN}fleet${C_SLATE} | ${C_CYAN}doctor${C_SLATE} | ${C_CYAN}notify${C_SLATE} | ${C_CYAN}alert${C_SLATE} | ${C_CYAN}restart${C_RESET}"
   )
 
   local -a logo_lines=()
@@ -920,21 +1003,83 @@ print_syncalibur_dashboard() {
 }
 
 # ==============================================================================
-# Multi-Channel Webhook Notification Dispatcher (Go Engine + curl fallback)
+# First-Class Telegram Bot & Multi-Channel Webhook Notification Dispatcher
 # ==============================================================================
 
+has_notification_channel() {
+  [[ -n "${WEBHOOK_URL}" ]] || [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]
+}
+
 send_webhook_notification() {
-  local event_type="$1" title="$2" message="$3" details="${4:-}"
-  [[ -n "${WEBHOOK_URL}" ]] || return 0
-  if [[ ",${WEBHOOK_EVENTS}," != *",${event_type},"* && "${WEBHOOK_EVENTS}" != "all" ]]; then
-    return 0
+  local event_type="$1" title="$2" message="$3" details="${4:-}" sync_flag="${5:-async}"
+  has_notification_channel || return 0
+
+  if [[ "${event_type}" != "test" ]]; then
+    if [[ "${event_type}" == "success" ]]; then
+      if [[ "${WEBHOOK_ON_SUCCESS}" != "true" && ",${WEBHOOK_EVENTS}," != *",success,"* && "${WEBHOOK_EVENTS}" != "all" ]]; then
+        return 0
+      fi
+    elif [[ ",${WEBHOOK_EVENTS}," != *",${event_type},"* && "${WEBHOOK_EVENTS}" != "all" ]]; then
+      return 0
+    fi
   fi
+
   local repo_name branch_name
   repo_name="$(basename "${REPO_ROOT}")"
   branch_name="$(get_branch || echo main)"
 
   if ensure_go_engine; then
-    ("${GO_ENGINE_BIN}" webhook "${WEBHOOK_URL}" "${event_type}" "${repo_name}" "${branch_name}" "${title}" "${message}" "${details}" >/dev/null 2>&1 &)
+    if [[ "${sync_flag}" == "sync" ]]; then
+      SYNCALIBUR_TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}" \
+      SYNCALIBUR_TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID}" \
+        "${GO_ENGINE_BIN}" webhook "${WEBHOOK_URL}" "${event_type}" "${repo_name}" "${branch_name}" "${title}" "${message}" "${details}"
+      return $?
+    else
+      (
+        SYNCALIBUR_TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}" \
+        SYNCALIBUR_TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID}" \
+          "${GO_ENGINE_BIN}" webhook "${WEBHOOK_URL}" "${event_type}" "${repo_name}" "${branch_name}" "${title}" "${message}" "${details}" >/dev/null 2>&1
+      ) &
+      return 0
+    fi
+  fi
+
+  # Pure-Bash curl fallback when Go binary is unavailable
+  if command -v curl >/dev/null 2>&1 && [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
+    local tg_url="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN#bot}/sendMessage"
+    local tg_text="⚔️ ${title} — ${message} [${repo_name} (${branch_name})]"
+    if [[ "${sync_flag}" == "sync" ]]; then
+      curl -fsSL -m 8 -X POST "${tg_url}" -d "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${tg_text}" >/dev/null
+      return $?
+    else
+      (curl -fsSL -m 8 -X POST "${tg_url}" -d "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${tg_text}" >/dev/null 2>&1 &)
+    fi
+  fi
+  return 0
+}
+
+cmd_notify() {
+  local custom_msg="${*:-Manual test notification triggered via 'syncalibur notify'. Your Telegram / Webhook pipeline is online!}"
+  local repo_name branch_name
+  repo_name="$(basename "${REPO_ROOT}")"
+  branch_name="$(get_branch || echo main)"
+
+  if ! has_notification_channel; then
+    printf '\n  %s⚠️  No Telegram Bot or Webhook URL is configured yet in %s.%s\n\n' "${C_AMBER}${C_BOLD}" "${CONFIG_FILE:-syncalibur.env}" "${C_RESET}"
+    printf '  %sTo enable First-Class Telegram Bot notifications:%s\n' "${C_GOLD}${C_BOLD}" "${C_RESET}"
+    printf '    1. Open Telegram and message %s@BotFather%s -> %s/newbot%s to get a token\n' "${C_CYAN}" "${C_RESET}" "${C_WHITE}" "${C_RESET}"
+    printf '    2. Set %sSYNCALIBUR_TELEGRAM_BOT_TOKEN="..."%s and %sSYNCALIBUR_TELEGRAM_CHAT_ID="..."%s in %ssyncalibur.env%s\n' "${C_CYAN}" "${C_RESET}" "${C_CYAN}" "${C_RESET}" "${C_WHITE}" "${C_RESET}"
+    printf '    3. Or set %sSYNCALIBUR_WEBHOOK_URL="..."%s for Discord / Slack / Telegram / Custom JSON\n\n' "${C_CYAN}" "${C_RESET}"
+    return 1
+  fi
+
+  printf '  %s📡 Dispatching notification for %s (%s)...%s\n' "${C_CYAN}" "${repo_name}" "${branch_name}" "${C_RESET}"
+  if send_webhook_notification "test" "Syncalibur Notification (${repo_name})" "${custom_msg}" "Triggered via: syncalibur notify" "sync"; then
+    printf '  %s✔ Notification delivered successfully!%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
+    return 0
+  else
+    printf '  %s✖ Failed to deliver notification. Check your token/chat_id or webhook URL in %s.%s\n' "${C_RED}${C_BOLD}" "${CONFIG_FILE:-syncalibur.env}" "${C_RESET}" >&2
+    return 1
   fi
 }
 
