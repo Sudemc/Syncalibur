@@ -52,6 +52,20 @@ func TestDetectSecretsInFile(t *testing.T) {
 	if hasSecret, _ := detectSecretsInFile(keyFile); !hasSecret {
 		t.Errorf("expected Private Key header to be detected")
 	}
+
+	// 5. Benign File with UUID (should NOT trigger secret quarantine)
+	uuidFile := filepath.Join(tmpDir, "uuid.txt")
+	_ = os.WriteFile(uuidFile, []byte("SESSION_ID=c82c1970-4ff7-461a-80d0-e958b320a7ec\n"), 0644)
+	if hasSecret, reason := detectSecretsInFile(uuidFile); hasSecret {
+		t.Errorf("expected UUID to be ignored, got false alarm: %s", reason)
+	}
+
+	// 6. Benign File with base64 data URI (should NOT trigger secret quarantine)
+	dataUriFile := filepath.Join(tmpDir, "asset.js")
+	_ = os.WriteFile(dataUriFile, []byte("const icon = \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\";\n"), 0644)
+	if hasSecret, reason := detectSecretsInFile(dataUriFile); hasSecret {
+		t.Errorf("expected data URI to be ignored, got false alarm: %s", reason)
+	}
 }
 
 func TestValidateFileSyntax(t *testing.T) {
@@ -85,11 +99,11 @@ func TestValidateFileSyntax(t *testing.T) {
 		t.Errorf("expected broken JSON to fail syntax check")
 	}
 
-	// 5. Valid Bash script
+	// 5. Valid Bash script with case statement and hash comments
 	validSh := filepath.Join(tmpDir, "valid.sh")
-	_ = os.WriteFile(validSh, []byte("#!/bin/bash\nif [ 1 -eq 1 ]; then echo ok; fi\n"), 0755)
+	_ = os.WriteFile(validSh, []byte("#!/bin/bash\n# comment with (unclosed paren\ncase \"$1\" in\n  start) echo ok ;;\n  stop)  echo bye ;;\nesac\n"), 0755)
 	if valid, errReason := validateFileSyntax(tmpDir, "valid.sh"); !valid {
-		t.Errorf("expected valid Bash script to pass, got: %s", errReason)
+		t.Errorf("expected valid Bash script with case and comment to pass, got: %s", errReason)
 	}
 
 	// 6. Broken Bash script (unclosed if statement)
@@ -125,6 +139,27 @@ func TestValidateFileSyntax(t *testing.T) {
 	_ = os.WriteFile(brokenTSX, []byte("export const Header = () => { return <div>{items.map(i => <span>{i}</span>); };"), 0644)
 	if valid, _ := validateFileSyntax(tmpDir, "BrokenComponent.tsx"); valid {
 		t.Errorf("expected broken React TSX to fail syntax check")
+	}
+
+	// 11. Valid Python with hash comment and multiline docstring
+	validPy := filepath.Join(tmpDir, "script.py")
+	pyContent := `# Python script with (unmatched parenthesis in comment
+"""
+Docstring with [unmatched brackets] and (parentheses)
+"""
+def hello():
+    return "world"
+`
+	_ = os.WriteFile(validPy, []byte(pyContent), 0644)
+	if valid, errReason := validateFileSyntax(tmpDir, "script.py"); !valid {
+		t.Errorf("expected valid Python with docstring and comments to pass, got: %s", errReason)
+	}
+
+	// 12. Broken Python (unclosed bracket in code)
+	brokenPy := filepath.Join(tmpDir, "broken.py")
+	_ = os.WriteFile(brokenPy, []byte("def broken():\n    return [1, 2, 3\n"), 0644)
+	if valid, _ := validateFileSyntax(tmpDir, "broken.py"); valid {
+		t.Errorf("expected broken Python to fail syntax check")
 	}
 }
 
