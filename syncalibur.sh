@@ -1075,7 +1075,7 @@ send_webhook_notification() {
   # Pure-Bash curl fallback when Go binary is unavailable
   if command -v curl >/dev/null 2>&1 && [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]]; then
     local tg_url="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN#bot}/sendMessage"
-    local tg_text="⚔️ ${title} — ${message} [${repo_name} (${branch_name})]"
+    local tg_text="◈ ${title} — ${message} [${repo_name} (${branch_name})]"
     if [[ "${sync_flag}" == "sync" ]]; then
       curl -fsSL -m 8 -X POST "${tg_url}" -d "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${tg_text}" >/dev/null
       return $?
@@ -1447,7 +1447,7 @@ render_auto_pr_body() {
   fi
 
   cat << EOF
-## ⚔️ Summary
+## ◈ Summary
 
 **${pr_title}**
 
@@ -2632,6 +2632,7 @@ cmd_uninstall() {
 }
 
 cmd_start() {
+  ensure_go_engine || true
   case "${SERVICE_BACKEND}" in
     systemd)
       if is_service_installed; then
@@ -2671,6 +2672,7 @@ cmd_stop() {
 }
 
 cmd_restart() {
+  ensure_go_engine || true
   clear_sync_failure
   rm -f "${PAUSE_FILE}" 2>/dev/null || true
   case "${SERVICE_BACKEND}" in

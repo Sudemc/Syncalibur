@@ -786,14 +786,14 @@ func escapeTelegramHTML(s string) string {
 }
 
 func formatTelegramHTMLMessage(eventType, repoName, branchName, hostInfo, title, message, details string) string {
-	badge := "⚔️"
+	badge := "◈"
 	switch eventType {
 	case "failure":
 		badge = "🚨"
 	case "recovery", "success":
 		badge = "✅"
 	case "summary", "test":
-		badge = "⚔️"
+		badge = "◈"
 	}
 
 	var b strings.Builder

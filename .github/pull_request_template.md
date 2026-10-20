@@ -1,4 +1,4 @@
-## ⚔️ Summary
+## ◈ Summary
 
 <!-- Briefly describe what this Pull Request adds, fixes, or improves, and why. -->
 
