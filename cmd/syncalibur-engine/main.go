@@ -633,7 +633,7 @@ func printFleetStatusTable(fleetFile string) {
 	fmt.Printf("  %s╭────────────────────────────────────────────────────────────────────────────────────────╮%s\n", cGold, cReset)
 	fmt.Printf("  %s│%s  %s%s%-84s%s  %s│%s\n", cGold, cReset, cGold, cBold, fmt.Sprintf("◈  S Y N C A L I B U R   F L E E T   S T A T U S   (%d REPOSITORIES)", len(results)), cReset, cGold, cReset)
 	fmt.Printf("  %s╰────────────────────────────────────────────────────────────────────────────────────────╯%s\n", cGold, cReset)
-	fmt.Printf("    %s%-22s %-14s %-12s %-14s %-24s%s\n", cBold, "REPOSITORY", "DAEMON", "BRANCH", "SYNC STATE", "PATH", cReset)
+	fmt.Printf("    %s%-20s %-14s %-12s %-22s %-20s%s\n", cBold, "REPOSITORY", "DAEMON", "BRANCH", "SYNC STATE", "PATH", cReset)
 	fmt.Printf("    %s──────────────────────────────────────────────────────────────────────────────────────%s\n", cSlate, cReset)
 
 	home, _ := os.UserHomeDir()
@@ -642,15 +642,21 @@ func printFleetStatusTable(fleetFile string) {
 		if home != "" && strings.HasPrefix(shortPath, home) {
 			shortPath = "~" + strings.TrimPrefix(shortPath, home)
 		}
-		syncBadge := cGreen + "✔ In Sync" + cReset
+		rawSync := "✔ In Sync"
+		syncColor := cGreen
 		if r.Dirty > 0 || r.Unpushed > 0 {
-			syncBadge = fmt.Sprintf("%s● %d dirty, %d unpushed%s", cAmber, r.Dirty, r.Unpushed, cReset)
+			rawSync = fmt.Sprintf("● %d dirty, %d unpushed", r.Dirty, r.Unpushed)
+			syncColor = cAmber
 		}
-		fmt.Printf("    %s%-22s%s %-23s %s%-12s%s %-23s %s%s%s\n",
-			cWhite+cBold, truncateStr(r.Name, 21), cReset,
-			r.State,
+		stateColor := cSlate
+		if strings.HasPrefix(r.State, "●") {
+			stateColor = cGreen
+		}
+		fmt.Printf("    %s%-20s%s %s%-14s%s %s%-12s%s %s%-22s%s %s%s%s\n",
+			cWhite+cBold, truncateStr(r.Name, 19), cReset,
+			stateColor, truncateStr(r.State, 13), cReset,
 			cCyan, truncateStr(r.Branch, 11), cReset,
-			syncBadge,
+			syncColor, truncateStr(rawSync, 21), cReset,
 			cSlate, shortPath, cReset)
 	}
 	fmt.Println()
@@ -661,7 +667,7 @@ func inspectRepoStatus(repoPath string) fleetRepoStatus {
 		Path:   repoPath,
 		Name:   filepath.Base(repoPath),
 		Branch: "main",
-		State:  cSlate + "○ Idle" + cReset,
+		State:  "○ Idle",
 	}
 	if bOut, err := exec.Command("git", "-C", repoPath, "symbolic-ref", "--quiet", "--short", "HEAD").Output(); err == nil {
 		st.Branch = strings.TrimSpace(string(bOut))
@@ -670,7 +676,7 @@ func inspectRepoStatus(repoPath string) fleetRepoStatus {
 	if pBytes, err := os.ReadFile(pidFile); err == nil {
 		pidStr := strings.TrimSpace(string(pBytes))
 		if pid, err := strconv.Atoi(pidStr); err == nil && processAlive(pid) {
-			st.State = fmt.Sprintf("%s● PID %d%s", cGreen, pid, cReset)
+			st.State = fmt.Sprintf("● PID %d", pid)
 		}
 	}
 	if sOut, err := exec.Command("git", "-C", repoPath, "status", "--porcelain", "-uall").Output(); err == nil {
