@@ -62,11 +62,16 @@ type rgbaPx struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: syncalibur-engine <render-logo|commit-msg|sparkline|fleet-scan|fleet-status|webhook|telegram|ui> [args...]")
+		fmt.Fprintln(os.Stderr, "Usage: syncalibur <daemon-exec|render-logo|commit-msg|sparkline|fleet-scan|fleet-status|webhook|telegram|ui> [args...]")
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
+	case "daemon-exec", "daemon":
+		if len(os.Args) < 3 {
+			os.Exit(1)
+		}
+		os.Exit(runDaemonSupervisor(os.Args[2], os.Args[3:]...))
 	case "render-logo":
 		if len(os.Args) < 4 {
 			os.Exit(1)
@@ -129,6 +134,45 @@ func main() {
 	default:
 		os.Exit(1)
 	}
+}
+
+// ==============================================================================
+// 0. Native Process Supervisor (`daemon-exec`) — Registers `syncalibur` in top/ps
+// ==============================================================================
+
+func runDaemonSupervisor(scriptPath string, extraArgs ...string) int {
+	args := append([]string{scriptPath}, extraArgs...)
+	cmd := exec.Command("bash", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("SYNCALIBUR_SUPERVISOR_PID=%d", os.Getpid()),
+		"SYNCALIBUR_WRAPPED=1",
+	)
+
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "syncalibur supervisor start error: %v\n", err)
+		return 1
+	}
+
+	sigCh := make(chan os.Signal, 2)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		for sig := range sigCh {
+			if cmd.Process != nil {
+				_ = cmd.Process.Signal(sig)
+			}
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return exitErr.ExitCode()
+		}
+		return 1
+	}
+	return 0
 }
 
 // ==============================================================================
