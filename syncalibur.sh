@@ -1938,14 +1938,14 @@ push_changes() {
 
   targets_desc="$(describe_push_targets_inline "${remote}")"
   last_commit_msg="$(git log -1 --pretty=%s 2>/dev/null || echo "auto-sync")"
-  log "📤 Pushing '${branch}' -> ${targets_desc}..."
+  log "↗ Pushing '${branch}' -> ${targets_desc}..."
   output="$(run_with_timeout "${PUSH_TIMEOUT}" git push -u "${remote}" "${branch}" 2>&1)"
   rc=$?
   printf '%s\n' "${output}" >> "${LOG_FILE}"
   if (( rc == 0 )); then
     clear_sync_failure
-    log "🎉 Push succeeded (${targets_desc})."
-    send_webhook_notification "success" "★ Syncalibur Push Succeeded ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Target: ${targets_desc} (${branch})"
+    log "✓ Push succeeded (${targets_desc})."
+    send_webhook_notification "success" "✓ Syncalibur Push Succeeded ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Target: ${targets_desc} (${branch})"
     return 0
   fi
 
@@ -1954,7 +1954,7 @@ push_changes() {
     local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')" pr_title pr_body
     pr_title="${last_commit_msg}"
     pr_body="$(render_auto_pr_body "${REPO_ROOT}" "${branch}" "${pr_branch}" "${pr_title}" "Protected Branch Auto-PR (\`GH006\`)")"
-    log "🔀 Branch '${branch}' is protected; pushing to '${pr_branch}' and opening templated Pull Request..."
+    log "⇄ Branch '${branch}' is protected; pushing to '${pr_branch}' and opening templated Pull Request..."
     if run_with_timeout "${PUSH_TIMEOUT}" git push -u origin "HEAD:refs/heads/${pr_branch}" >> "${LOG_FILE}" 2>&1; then
       if command -v gh >/dev/null 2>&1; then
         gh pr create --base "${branch}" --head "${pr_branch}" --title "${pr_title}" --body "${pr_body}" >> "${LOG_FILE}" 2>&1 || true
@@ -1962,8 +1962,8 @@ push_changes() {
         glab mr create --target-branch "${branch}" --source-branch "${pr_branch}" --title "${pr_title}" --description "${pr_body}" --yes >> "${LOG_FILE}" 2>&1 || true
       fi
       clear_sync_failure
-      log "🎉 Opened templated Pull Request '${pr_branch}' -> '${branch}'."
-      send_webhook_notification "summary" "🔀 Auto-Opened Pull Request ($(basename "${REPO_ROOT}"))" "${pr_title} (${pr_branch} -> ${branch})" "${pr_body}"
+      log "✓ Opened templated Pull Request '${pr_branch}' -> '${branch}'."
+      send_webhook_notification "summary" "⇄ Auto-Opened Pull Request ($(basename "${REPO_ROOT}"))" "${pr_title} (${pr_branch} -> ${branch})" "${pr_body}"
       return 0
     fi
   fi
@@ -1976,8 +1976,8 @@ push_changes() {
       printf '%s\n' "${output}" >> "${LOG_FILE}"
       if (( rc == 0 )); then
         clear_sync_failure
-        log "🎉 Push succeeded after automatic rebase (${targets_desc})."
-        send_webhook_notification "success" "★ Syncalibur Push Succeeded ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Rebased & pushed to ${targets_desc} (${branch})"
+        log "✓ Push succeeded after automatic rebase (${targets_desc})."
+        send_webhook_notification "success" "✓ Syncalibur Push Succeeded ($(basename "${REPO_ROOT}"))" "${last_commit_msg}" "Rebased & pushed to ${targets_desc} (${branch})"
         return 0
       fi
     else
