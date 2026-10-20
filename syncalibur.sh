@@ -809,29 +809,33 @@ format_log_line() {
 
     case "${msg}" in
       *"Syncalibur started"*|*"Syncalibur online"*|*"başlatıldı"*)
-        badge_color="${C_GOLD}"; badge_text="◈ ONLINE   "; msg_color="${C_GOLD}${C_BOLD}" ;;
+        badge_color="${C_GOLD}"; badge_text="● ONLINE   "; msg_color="${C_GOLD}${C_BOLD}" ;;
       *"Targets:"*|*"Identity:"*|*"Poll:"*|*"Kontrol aralığı:"*)
-        badge_color="${C_CYAN}"; badge_text="◈ TELEMETRY"; msg_color="${C_SLATE}" ;;
+        badge_color="${C_CYAN}"; badge_text="◆ TELEMETRY"; msg_color="${C_SLATE}" ;;
       *"Self-Update:"*|*"Self-Sync:"*|*"hot-reloading"*)
         badge_color="${C_CYAN}${C_BOLD}"; badge_text="⟳ SELF-SYNC"; msg_color="${C_CYAN}" ;;
       *"Fast-forward"*|*"Rebase"*|*"Divergence"*)
-        badge_color="${C_CYAN}"; badge_text="🔀 BI-SYNC "; msg_color="${C_CYAN}" ;;
+        badge_color="${C_CYAN}"; badge_text="⇄ BI-SYNC  "; msg_color="${C_CYAN}" ;;
       *"Creating "*|*"repository ready"*|*"Bound remote"*)
         badge_color="${C_GOLD}"; badge_text="✦ AUTOREPO "; msg_color="${C_GOLD}" ;;
       *"Changes detected"*|*"Değişiklik algılandı"*)
-        badge_color="${C_CYAN}"; badge_text="◉ DETECTED "; msg_color="${C_CYAN}" ;;
+        badge_color="${C_CYAN}"; badge_text="● DETECTED "; msg_color="${C_CYAN}" ;;
+      *"[SECRET SHIELD]"*)
+        badge_color="${C_RED}${C_BOLD}"; badge_text="⛨ QUARANTINE"; msg_color="${C_RED}" ;;
+      *"[SYNTAX HOLD]"*)
+        badge_color="${C_AMBER}${C_BOLD}"; badge_text="▲ SYNTAX HOLD"; msg_color="${C_AMBER}" ;;
       *"Committed"*|*"Commit oluşturuldu"*)
-        badge_color="${C_GREEN}"; badge_text="✔ COMMIT   "; msg_color="${C_GREEN}" ;;
+        badge_color="${C_GREEN}"; badge_text="✓ COMMIT   "; msg_color="${C_GREEN}" ;;
       *"Pushing"*|*"Uzak depoya"*)
-        badge_color="${C_GOLD}"; badge_text="▲ PUSHING  "; msg_color="${C_GOLD}" ;;
+        badge_color="${C_GOLD}"; badge_text="↗ PUSHING  "; msg_color="${C_GOLD}" ;;
       *"Push succeeded"*|*"Başarıyla pushlandı"*)
-        badge_color="${C_GREEN}${C_BOLD}"; badge_text="★ SYNCED   "; msg_color="${C_GREEN}${C_BOLD}" ;;
+        badge_color="${C_GREEN}${C_BOLD}"; badge_text="✓ SYNCED   "; msg_color="${C_GREEN}${C_BOLD}" ;;
       *"Not committing"*)
-        badge_color="${C_AMBER}"; badge_text="🛡 GUARD    "; msg_color="${C_AMBER}" ;;
+        badge_color="${C_AMBER}"; badge_text="⛨ GUARD    "; msg_color="${C_AMBER}" ;;
       *"Push failed"*|*"timed out"*|*"failed"*|*"conflict"*|*"Another Syncalibur"*|*"SYNC FAILED"*)
-        badge_color="${C_RED}${C_BOLD}"; badge_text="✖ ERROR    "; msg_color="${C_RED}" ;;
+        badge_color="${C_RED}${C_BOLD}"; badge_text="✕ ERROR    "; msg_color="${C_RED}" ;;
       *"Retrying"*)
-        badge_color="${C_AMBER}"; badge_text="↻ RETRY    "; msg_color="${C_AMBER}" ;;
+        badge_color="${C_AMBER}"; badge_text="⟳ RETRY    "; msg_color="${C_AMBER}" ;;
       *"paused"*)
         badge_color="${C_AMBER}"; badge_text="⏸ PAUSED   "; msg_color="${C_AMBER}" ;;
       *"stopped"*|*"durduruldu"*)
