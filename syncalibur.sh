@@ -2063,8 +2063,8 @@ cmd_check() {
   local changed_cnt unpushed_cnt remotes_desc branch
   branch="$(git -C "${target_repo}" branch --show-current 2>/dev/null || echo "main")"
   changed_cnt="$(git -C "${target_repo}" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-  unpushed_cnt="$(unpushed_count "$(get_remote)" "${branch}")"
-  remotes_desc="$(describe_push_targets_inline "$(get_remote)")"
+  unpushed_cnt="$(cd "${target_repo}" && unpushed_count "$(get_remote)" "${branch}")"
+  remotes_desc="$(cd "${target_repo}" && describe_push_targets_inline "$(get_remote)")"
 
   echo -e "  ${C_CYAN}✦ Working Tree  : ${changed_cnt} changed file(s)${C_RESET}"
   if (( changed_cnt > 0 )); then
