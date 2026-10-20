@@ -1,0 +1,8 @@
+# Syncalibur runtime files
+*.pid
+*.lock
+*.log
+*.auth
+*.failure
+*.alert_ts
+.DS_Store
