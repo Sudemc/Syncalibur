@@ -797,6 +797,142 @@ func detectSecretsInFile(filePath string) (bool, string) {
 	return false, ""
 }
 
+type bracketToken struct {
+	char rune
+	line int
+}
+
+func checkLexicalBalance(src []byte, ext string) (bool, string) {
+	var stack []bracketToken
+	runes := []rune(string(src))
+	n := len(runes)
+	line := 1
+
+	inLineComment := false
+	inBlockComment := false
+	inDoubleQuote := false
+	inSingleQuote := false
+	inBacktick := false
+	escaped := false
+
+	isRust := ext == ".rs"
+
+	for i := 0; i < n; i++ {
+		ch := runes[i]
+		if ch == '\n' {
+			line++
+			if inLineComment {
+				inLineComment = false
+			}
+			escaped = false
+			continue
+		}
+
+		if inLineComment {
+			continue
+		}
+
+		if inBlockComment {
+			if ch == '*' && i+1 < n && runes[i+1] == '/' {
+				inBlockComment = false
+				i++
+			}
+			continue
+		}
+
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if ch == '\\' && (inDoubleQuote || inSingleQuote || inBacktick) {
+			escaped = true
+			continue
+		}
+
+		if inDoubleQuote {
+			if ch == '"' {
+				inDoubleQuote = false
+			}
+			continue
+		}
+
+		if inSingleQuote {
+			if ch == '\'' {
+				inSingleQuote = false
+			}
+			continue
+		}
+
+		if inBacktick {
+			if ch == '`' {
+				inBacktick = false
+			}
+			continue
+		}
+
+		// Check comment starts
+		if ch == '/' && i+1 < n {
+			if runes[i+1] == '/' {
+				inLineComment = true
+				i++
+				continue
+			} else if runes[i+1] == '*' {
+				inBlockComment = true
+				i++
+				continue
+			}
+		}
+
+		// Check string starts
+		if ch == '"' {
+			inDoubleQuote = true
+			continue
+		}
+		if ch == '\'' && !isRust {
+			inSingleQuote = true
+			continue
+		}
+		if ch == '`' {
+			inBacktick = true
+			continue
+		}
+
+		// Brackets
+		if ch == '{' || ch == '(' || ch == '[' {
+			stack = append(stack, bracketToken{char: ch, line: line})
+		} else if ch == '}' || ch == ')' || ch == ']' {
+			if len(stack) == 0 {
+				return false, fmt.Sprintf("line %d: unexpected closing '%c' with no matching open bracket", line, ch)
+			}
+			top := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+
+			if (ch == '}' && top.char != '{') ||
+				(ch == ')' && top.char != '(') ||
+				(ch == ']' && top.char != '[') {
+				return false, fmt.Sprintf("line %d: mismatched closing '%c' (expected closing for '%c' from line %d)", line, ch, top.char, top.line)
+			}
+		}
+	}
+
+	if inBlockComment {
+		return false, "unclosed block comment '/*' spanning to end of file"
+	}
+	if inDoubleQuote {
+		return false, "unclosed string literal '\"' spanning to end of file"
+	}
+	if inBacktick {
+		return false, "unclosed template literal '`' spanning to end of file"
+	}
+	if len(stack) > 0 {
+		top := stack[len(stack)-1]
+		return false, fmt.Sprintf("line %d: unclosed '%c' at end of file", top.line, top.char)
+	}
+
+	return true, ""
+}
+
 func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 	absPath := filepath.Join(repoRoot, relPath)
 	data, err := os.ReadFile(absPath)
@@ -822,7 +958,10 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 				return false, fmt.Sprintf("%s: %s", relPath, errMsg)
 			}
 		}
-	case ".js", ".mjs":
+		if ok, reason := checkLexicalBalance(data, ext); !ok {
+			return false, fmt.Sprintf("%s: %s", relPath, reason)
+		}
+	case ".js", ".mjs", ".cjs":
 		if _, err := exec.LookPath("node"); err == nil {
 			cmd := exec.Command("node", "--check", absPath)
 			if out, err := cmd.CombinedOutput(); err != nil {
@@ -833,10 +972,61 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 				return false, fmt.Sprintf("%s: %s", relPath, errMsg)
 			}
 		}
+		if ok, reason := checkLexicalBalance(data, ext); !ok {
+			return false, fmt.Sprintf("%s: %s", relPath, reason)
+		}
+	case ".ts", ".tsx", ".jsx":
+		localTsc := filepath.Join(repoRoot, "node_modules", ".bin", "tsc")
+		tscBin := ""
+		if _, err := os.Stat(localTsc); err == nil {
+			tscBin = localTsc
+		} else if p, err := exec.LookPath("tsc"); err == nil {
+			tscBin = p
+		}
+		if tscBin != "" {
+			cmd := exec.Command(tscBin, "--noEmit", "--skipLibCheck", absPath)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				errMsg := strings.TrimSpace(string(out))
+				if errMsg != "" {
+					lines := strings.Split(errMsg, "\n")
+					return false, fmt.Sprintf("%s: %s", relPath, lines[0])
+				}
+			}
+		}
+		if ok, reason := checkLexicalBalance(data, ext); !ok {
+			return false, fmt.Sprintf("%s: %s", relPath, reason)
+		}
+	case ".java":
+		if javac, err := exec.LookPath("javac"); err == nil {
+			tmpDir, err := os.MkdirTemp("", "syncalibur-javac-*")
+			if err == nil {
+				defer os.RemoveAll(tmpDir)
+				cmd := exec.Command(javac, "-nowarn", "-d", tmpDir, absPath)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					errMsg := strings.TrimSpace(string(out))
+					if errMsg != "" {
+						lines := strings.Split(errMsg, "\n")
+						return false, fmt.Sprintf("%s: %s", relPath, lines[0])
+					}
+				}
+			}
+		}
+		if ok, reason := checkLexicalBalance(data, ext); !ok {
+			return false, fmt.Sprintf("%s: %s", relPath, reason)
+		}
 	case ".json":
 		var v any
 		if err := json.Unmarshal(data, &v); err != nil {
 			return false, fmt.Sprintf("%s: invalid JSON: %v", relPath, err)
+		}
+	case ".yaml", ".yml":
+		for lineNum, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "\t") {
+				return false, fmt.Sprintf("%s:%d: YAML syntax error: tabs are forbidden for indentation", relPath, lineNum+1)
+			}
+		}
+		if ok, reason := checkLexicalBalance(data, ext); !ok {
+			return false, fmt.Sprintf("%s: %s", relPath, reason)
 		}
 	case ".sh", ".bash":
 		if _, err := exec.LookPath("bash"); err == nil {
@@ -848,6 +1038,13 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 				}
 				return false, fmt.Sprintf("%s: %s", relPath, errMsg)
 			}
+		}
+		if ok, reason := checkLexicalBalance(data, ext); !ok {
+			return false, fmt.Sprintf("%s: %s", relPath, reason)
+		}
+	case ".c", ".cpp", ".cc", ".h", ".hpp", ".rs", ".kt", ".cs", ".swift", ".php", ".css", ".scss":
+		if ok, reason := checkLexicalBalance(data, ext); !ok {
+			return false, fmt.Sprintf("%s: %s", relPath, reason)
 		}
 	}
 	return true, ""
