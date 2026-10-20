@@ -319,7 +319,7 @@ resolve_default_watch_fallback() {
   fi
 }
 
-WATCH_PATH="${SYNCALIBUR_REPO_PATH:-${AUTO_SYNC_REPO_PATH:-}}"
+WATCH_PATH="${SYNCALIBUR_REPO_PATH:-${SYNCALIBUR_REPO_DIR:-${AUTO_SYNC_REPO_PATH:-}}}"
 if [[ -n "${WATCH_PATH}" ]]; then
   WATCH_PATH="$(normalize_path_input "${WATCH_PATH}")"
   [[ "${WATCH_PATH}" == /* ]] || WATCH_PATH="$(dirname "${CONFIG_FILE:-${SCRIPT_PATH}}")/${WATCH_PATH}"
@@ -424,7 +424,9 @@ export GIT_TERMINAL_PROMPT=0
 export GCM_INTERACTIVE=never
 
 detect_fs_watcher() {
-  if command -v inotifywait >/dev/null 2>&1; then
+  if [[ "${USE_FS_EVENTS}" == "false" ]]; then
+    echo "polling"
+  elif command -v inotifywait >/dev/null 2>&1; then
     echo "inotifywait"
   elif command -v fswatch >/dev/null 2>&1; then
     echo "fswatch"
