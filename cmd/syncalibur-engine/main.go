@@ -486,7 +486,7 @@ func detectEnclosingSymbol(repoRoot string, files []string) (string, string) {
 		absPath := filepath.Join(repoRoot, file)
 
 		if ext == ".go" {
-			diffOut, err := exec.Command("git", "-C", repoRoot, "diff", "--cached", "-U0", "--", file).Output()
+			diffOut, err := exec.Command("git", "-C", repoRoot, "-c", "core.quotePath=false", "diff", "--cached", "-U0", "--", file).Output()
 			if err == nil {
 				reHunk := regexp.MustCompile(`@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@`)
 				for _, line := range strings.Split(string(diffOut), "\n") {
@@ -503,7 +503,7 @@ func detectEnclosingSymbol(repoRoot string, files []string) (string, string) {
 				}
 			}
 		} else if ext == ".py" || ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" || ext == ".rs" || ext == ".cpp" || ext == ".java" || ext == ".cs" || ext == ".kt" {
-			diffOut, err := exec.Command("git", "-C", repoRoot, "diff", "--cached", "-p", "--", file).Output()
+			diffOut, err := exec.Command("git", "-C", repoRoot, "-c", "core.quotePath=false", "diff", "--cached", "-p", "--", file).Output()
 			if err == nil {
 				for _, line := range strings.Split(string(diffOut), "\n") {
 					if strings.HasPrefix(line, "@@") {
