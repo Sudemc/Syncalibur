@@ -21,7 +21,6 @@ import (
 	"go/parser"
 	"go/token"
 	"image"
-	"image/color"
 	_ "image/png"
 	"io"
 	"math"
