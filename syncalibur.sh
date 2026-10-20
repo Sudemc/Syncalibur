@@ -1271,6 +1271,16 @@ sync_and_update_self_repo() {
         if p_out="$(run_with_timeout "${PUSH_TIMEOUT}" git -C "${SELF_REPO_ROOT}" push -u "${self_remote}" "${self_branch}" 2>&1)"; then
           printf '%s\n' "${p_out}" >> "${LOG_FILE}"
           log "🎉 Self-Sync: Pushed Syncalibur repository updates to ${self_remote}/${self_branch}."
+        elif grep -qiE 'GH006|protected branch|Required status check|At least 1 approving review' <<< "${p_out}"; then
+          local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')"
+          log "🔀 Self-Sync: '${self_branch}' is protected; pushing feature branch '${pr_branch}' & opening Pull Request..."
+          if git -C "${SELF_REPO_ROOT}" push -u "${self_remote}" "HEAD:refs/heads/${pr_branch}" >> "${LOG_FILE}" 2>&1; then
+            if command -v gh >/dev/null 2>&1; then
+              gh pr create -R YusufKaya00/Syncalibur --base "${self_branch}" --head "${pr_branch}" --title "${s_msg}" --body "Automated Syncalibur self-sync Pull Request." >> "${LOG_FILE}" 2>&1 || true
+            fi
+            git -C "${SELF_REPO_ROOT}" reset --hard "${self_remote}/${self_branch}" >/dev/null 2>&1 || true
+            log "🎉 Self-Sync: Opened Pull Request '${pr_branch}' -> '${self_branch}'."
+          fi
         else
           printf '%s\n' "${p_out}" >> "${LOG_FILE}"
           log "⚠️  Self-Sync push failed: $(push_error_summary "${p_out}")"
@@ -1578,6 +1588,21 @@ push_changes() {
     clear_sync_failure
     log "🎉 Push succeeded (${targets_desc})."
     return 0
+  fi
+
+  # If push failed due to protected branch rules (GH006 / required PR review), auto-push a branch and open a PR!
+  if grep -qiE 'GH006|protected branch|Required status check|At least 1 approving review' <<< "${output}"; then
+    local pr_branch="sync/auto-$(date '+%Y%m%d-%H%M%S')" pr_title
+    pr_title="$(git log -1 --pretty=%s 2>/dev/null || echo "chore: automated sync")"
+    log "🔀 Branch '${branch}' is protected; pushing to '${pr_branch}' and opening Pull Request..."
+    if run_with_timeout "${PUSH_TIMEOUT}" git push -u origin "HEAD:refs/heads/${pr_branch}" >> "${LOG_FILE}" 2>&1; then
+      if command -v gh >/dev/null 2>&1; then
+        gh pr create --base "${branch}" --head "${pr_branch}" --title "${pr_title}" --body "Automated Pull Request created by Syncalibur because \`${branch}\` is protected." >> "${LOG_FILE}" 2>&1 || true
+      fi
+      clear_sync_failure
+      log "🎉 Opened Pull Request '${pr_branch}' -> '${branch}'."
+      return 0
+    fi
   fi
 
   # If push failed due to non-fast-forward and bidirectional sync is enabled, try safe rebase & retry push!
