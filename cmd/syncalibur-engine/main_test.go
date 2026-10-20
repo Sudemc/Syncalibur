@@ -84,6 +84,20 @@ func TestValidateFileSyntax(t *testing.T) {
 	if valid, _ := validateFileSyntax(tmpDir, "broken.json"); valid {
 		t.Errorf("expected broken JSON to fail syntax check")
 	}
+
+	// 5. Valid Bash script
+	validSh := filepath.Join(tmpDir, "valid.sh")
+	_ = os.WriteFile(validSh, []byte("#!/bin/bash\nif [ 1 -eq 1 ]; then echo ok; fi\n"), 0755)
+	if valid, errReason := validateFileSyntax(tmpDir, "valid.sh"); !valid {
+		t.Errorf("expected valid Bash script to pass, got: %s", errReason)
+	}
+
+	// 6. Broken Bash script (unclosed if statement)
+	brokenSh := filepath.Join(tmpDir, "broken.sh")
+	_ = os.WriteFile(brokenSh, []byte("#!/bin/bash\nif [ 1 -eq 1 ]; then echo ok\n"), 0755)
+	if valid, _ := validateFileSyntax(tmpDir, "broken.sh"); valid {
+		t.Errorf("expected broken Bash script to fail syntax check")
+	}
 }
 
 func TestInspectGoAST(t *testing.T) {
