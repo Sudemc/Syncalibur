@@ -1,0 +1,11 @@
+# Global Repository Owners — Automatic Review Request on All PRs
+* @YusufKaya00
+
+# Go Native Engine & TUI Cockpit
+/cmd/ @YusufKaya00
+/go.mod @YusufKaya00
+
+# Daemon Supervisor & Public Installer
+/syncalibur.sh @YusufKaya00
+/install.sh @YusufKaya00
+/.github/ @YusufKaya00
