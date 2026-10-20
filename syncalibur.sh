@@ -2375,7 +2375,11 @@ run_daemon() {
         repo_busy >/dev/null && continue
         if commit_changes; then
           idle_snapshot="$(snapshot)"
-          push_pending=1; next_retry=0; retry_delay="${RETRY_BASE}"
+          push_pending=1
+          if (( $(date +%s) >= next_retry )); then
+            next_retry=0
+            retry_delay="${RETRY_BASE}"
+          fi
         else
           idle_snapshot="$(snapshot)"
         fi
