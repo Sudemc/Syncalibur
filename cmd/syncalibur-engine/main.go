@@ -1768,9 +1768,26 @@ func sendWebhook(webhookURL, eventType, repoName, branchName, title, message, de
 // 7. Two-Pane Interactive Live TUI with Scrollable Logs (`syncalibur ui`)
 // ==============================================================================
 
+type winsize struct {
+	Row    uint16
+	Col    uint16
+	Xpixel uint16
+	Ypixel uint16
+}
+
 func getTerminalSize() (int, int) {
-	out, err := exec.Command("stty", "size").Output()
-	if err == nil {
+	ws := &winsize{}
+	retCode, _, _ := syscall.Syscall(syscall.SYS_IOCTL,
+		uintptr(syscall.Stdin),
+		uintptr(syscall.TIOCGWINSZ),
+		uintptr(unsafe.Pointer(ws)))
+	if int(retCode) >= 0 && ws.Row > 0 && ws.Col > 0 {
+		return int(ws.Row), int(ws.Col)
+	}
+
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = os.Stdin
+	if out, err := cmd.Output(); err == nil {
 		parts := strings.Fields(strings.TrimSpace(string(out)))
 		if len(parts) >= 2 {
 			r, err1 := strconv.Atoi(parts[0])
@@ -1780,7 +1797,30 @@ func getTerminalSize() (int, int) {
 			}
 		}
 	}
-	return 28, 100
+	return 24, 80
+}
+
+func getDaemonStatus(gitDir string) (bool, int) {
+	pidBytes, err := os.ReadFile(filepath.Join(gitDir, "syncalibur.pid"))
+	if err == nil {
+		pidStr := strings.TrimSpace(string(pidBytes))
+		if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+			if syscall.Kill(pid, 0) == nil {
+				return true, pid
+			}
+		}
+	}
+
+	out, err := exec.Command("systemctl", "--user", "is-active", "syncalibur.service").Output()
+	if err == nil && strings.TrimSpace(string(out)) == "active" {
+		pidOut, err := exec.Command("systemctl", "--user", "show", "--property", "MainPID", "--value", "syncalibur.service").Output()
+		if err == nil {
+			pid, _ := strconv.Atoi(strings.TrimSpace(string(pidOut)))
+			return true, pid
+		}
+		return true, 0
+	}
+	return false, 0
 }
 
 func loadLogLines(logPath string, maxLines int) []string {
@@ -1844,40 +1884,109 @@ var emojiToLucideReplacer = strings.NewReplacer(
 	"\ufe0f", "",
 )
 
-func formatLogLineForTUI(raw string, maxCols int) string {
+func renderLineANSI(s string, maxCols int, horizOffset int) string {
+	if maxCols < 10 {
+		maxCols = 10
+	}
+	var out strings.Builder
+	runes := []rune(s)
+	n := len(runes)
+
+	visCol := 0
+	printedCols := 0
+	hasMore := false
+
+	inEscape := false
+	var escBuf []rune
+
+	for i := 0; i < n; i++ {
+		r := runes[i]
+		if r == '\033' {
+			inEscape = true
+			escBuf = append(escBuf, r)
+			continue
+		}
+		if inEscape {
+			escBuf = append(escBuf, r)
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '~' {
+				inEscape = false
+				out.WriteString(string(escBuf))
+				escBuf = escBuf[:0]
+			}
+			continue
+		}
+
+		charWidth := 1
+		if r == '\t' {
+			charWidth = 4
+		}
+
+		if visCol >= horizOffset {
+			if printedCols+charWidth <= maxCols-1 {
+				out.WriteRune(r)
+				printedCols += charWidth
+			} else {
+				hasMore = true
+				break
+			}
+		}
+		visCol += charWidth
+	}
+
+	if hasMore {
+		out.WriteString(cGold + "…" + cReset)
+	}
+	out.WriteString(cReset + "\033[K")
+	return out.String()
+}
+
+func formatLogLineForTUI(raw string, maxCols int, horizOffset int) string {
 	raw = emojiToLucideReplacer.Replace(raw)
 
-	// Format log line with Lucide minimalist icons
+	var icon, color string
 	if strings.Contains(raw, "[SYNTAX HOLD]") {
-		raw = fmt.Sprintf("%s%s %s%s", cAmber, iconWarn, raw, cReset)
+		color = cAmber
+		icon = iconWarn
 	} else if strings.Contains(raw, "[SECRET SHIELD]") {
-		raw = fmt.Sprintf("%s%s %s%s", cRed, iconShield, raw, cReset)
-	} else if strings.Contains(raw, "Push succeeded") || strings.Contains(raw, "Committed") {
-		raw = fmt.Sprintf("%s%s %s%s", cGreen, iconCheck, raw, cReset)
-	} else if strings.Contains(raw, "Pushing") {
-		raw = fmt.Sprintf("%s%s %s%s", cGold, iconArrowUp, raw, cReset)
-	} else if strings.Contains(raw, "failed") || strings.Contains(raw, "error") {
-		raw = fmt.Sprintf("%s%s %s%s", cRed, iconCross, raw, cReset)
+		color = cRed
+		icon = iconShield
+	} else if strings.Contains(raw, "Push succeeded") || strings.Contains(raw, "Committed") || strings.Contains(raw, "✓") {
+		color = cGreen
+		icon = iconCheck
+	} else if strings.Contains(raw, "Pushing") || strings.Contains(raw, "↗") {
+		color = cGold
+		icon = iconArrowUp
+	} else if strings.Contains(raw, "failed") || strings.Contains(raw, "error") || strings.Contains(raw, "✕") {
+		color = cRed
+		icon = iconCross
 	} else {
-		raw = fmt.Sprintf("%s%s %s%s", cSlate, iconChevron, raw, cReset)
+		color = cSlate
+		icon = iconChevron
 	}
 
-	if len(raw) > maxCols+20 { // account for ANSI escapes
-		return raw[:maxCols+20]
-	}
-	return raw
+	formatted := fmt.Sprintf("%s%s %s%s", color, icon, raw, cReset)
+	return renderLineANSI(formatted, maxCols, horizOffset)
 }
 
 func runInteractiveTUI(scriptPath, repoRoot string) {
-	sttyOrigOut, _ := exec.Command("stty", "-g").Output()
+	sttyOrigCmd := exec.Command("stty", "-g")
+	sttyOrigCmd.Stdin = os.Stdin
+	sttyOrigOut, _ := sttyOrigCmd.Output()
 	sttyOrig := strings.TrimSpace(string(sttyOrigOut))
-	_ = exec.Command("stty", "-icanon", "-echo", "min", "0", "time", "0").Run()
+
+	rawCmd := exec.Command("stty", "-icanon", "-echo", "min", "1", "time", "0")
+	rawCmd.Stdin = os.Stdin
+	_ = rawCmd.Run()
 
 	cleanup := func() {
 		if sttyOrig != "" {
-			_ = exec.Command("stty", sttyOrig).Run()
+			c := exec.Command("stty", sttyOrig)
+			c.Stdin = os.Stdin
+			_ = c.Run()
 		} else {
-			_ = exec.Command("stty", "sane").Run()
+			c := exec.Command("stty", "sane")
+			c.Stdin = os.Stdin
+			_ = c.Run()
 		}
 		fmt.Print("\033[?1049l\033[?25h")
 	}
@@ -1893,17 +2002,17 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 
 	fmt.Print("\033[?1049h\033[?25l")
 
-	keyCh := make(chan []byte, 16)
+	keyCh := make(chan []byte, 32)
 	go func() {
-		buf := make([]byte, 8)
+		buf := make([]byte, 16)
 		for {
 			n, err := os.Stdin.Read(buf)
 			if err == nil && n > 0 {
 				cpy := make([]byte, n)
 				copy(cpy, buf[:n])
 				keyCh <- cpy
-			} else {
-				time.Sleep(30 * time.Millisecond)
+			} else if err != nil {
+				return
 			}
 		}
 	}()
@@ -1914,64 +2023,113 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 	logFile := filepath.Join(gitDir, "syncalibur.log")
 
 	scrollOffset := 0
+	horizOffset := 0
 	followMode := true
 
 	renderFrame := func() {
 		termRows, termCols := getTerminalSize()
-		if termCols < 80 {
-			termCols = 80
+		if termCols < 60 {
+			termCols = 60
 		}
-		if termRows < 24 {
-			termRows = 24
+		if termRows < 14 {
+			termRows = 14
 		}
 
-		var frame strings.Builder
-		frame.WriteString("\033[H")
+		online, daemonPid := getDaemonStatus(gitDir)
+		onlineStr := cGreen + "● ONLINE" + cReset
+		if !online {
+			onlineStr = cRed + "○ OFFLINE" + cReset
+		} else if daemonPid > 0 {
+			onlineStr = fmt.Sprintf("%s● ONLINE%s %s(PID %d)%s", cGreen, cReset, cSlate, daemonPid, cReset)
+		}
 
-		// 1. Top Section: Status Dashboard
-		cmd := exec.Command("bash", scriptPath, "status", "--compact-ui")
-		cmd.Env = append(os.Environ(), "CLICOLOR_FORCE=1")
-		out, _ := cmd.Output()
-		frame.Write(out)
+		pauseState := cGreen + iconPlay + " ACTIVE" + cReset
+		if _, err := os.Stat(filepath.Join(gitDir, "syncalibur.pause")); err == nil {
+			pauseState = cAmber + cBold + iconPause + " PAUSED" + cReset
+		}
 
-		// 2. Telemetry Banner
 		commitsTodayOut, _ := exec.Command("git", "-C", repoRoot, "rev-list", "--count", "--since=midnight", "HEAD").Output()
 		commitsToday := strings.TrimSpace(string(commitsTodayOut))
 		if commitsToday == "" {
 			commitsToday = "0"
 		}
-		spark := generateSparkline(repoRoot)
 
-		pauseState := cGreen + iconPlay + " ACTIVE" + cReset
-		if _, err := os.Stat(filepath.Join(gitDir, "syncalibur.pause")); err == nil {
-			pauseState = cAmber + cBold + iconPause + " PAUSED BY USER" + cReset
+		branchOut, _ := exec.Command("git", "-C", repoRoot, "symbolic-ref", "--short", "HEAD").Output()
+		branch := strings.TrimSpace(string(branchOut))
+		if branch == "" {
+			branch = "main"
 		}
 
+		unpushedOut, _ := exec.Command("git", "-C", repoRoot, "rev-list", "--count", "@{u}..HEAD").Output()
+		unpushed := strings.TrimSpace(string(unpushedOut))
+		if unpushed == "" {
+			unpushed = "0"
+		}
+
+		spark := generateSparkline(repoRoot)
 		nowStr := time.Now().Format("15:04:05")
-		fmt.Fprintf(&frame, "  %s╭────────────────────────────────────────────────────────────────────────────────────────╮%s\n", cGold, cReset)
-		fmt.Fprintf(&frame, "  %s│%s  %s%s%s LIVE TELEMETRY COCKPIT%s   •   Loop: %s   •   Today: %s%s commits%s   •   %s%s%s  %s│%s\n",
-			cGold, cReset, cCyan, cBold, iconDiamond, cReset, pauseState, cGreen, commitsToday, cReset, cSlate, nowStr, cReset, cGold, cReset)
-		fmt.Fprintf(&frame, "  %s│%s  %s%s 7-Day Velocity :%s %s\n", cGold, cReset, cGold, iconSparkle, cReset, spark)
-		fmt.Fprintf(&frame, "  %s│%s  %s%s Shields        :%s %s%s Syntax Pre-flight & Shannon Entropy Quarantining Active%s\n",
-			cGold, cReset, cGold, iconShield, cReset, cGreen, iconCheck, cReset)
+
+		boxWidth := termCols - 6
+		if boxWidth > 96 {
+			boxWidth = 96
+		}
+		if boxWidth < 50 {
+			boxWidth = 50
+		}
+
+		var frame strings.Builder
+		frame.WriteString("\033[H")
+
+		// 1. Telemetry Cockpit Header (Strictly 7 lines)
+		fmt.Fprintf(&frame, "  %s╭%s╮%s\033[K\n", cGold, strings.Repeat("─", boxWidth), cReset)
+
+		line1 := fmt.Sprintf("│  %s%s%s SYNCALIBUR COCKPIT%s  •  %s  •  Loop: %s  •  Today: %s%s commits%s  •  %s%s%s",
+			cCyan, cBold, iconDiamond, cReset, onlineStr, pauseState, cGreen, commitsToday, cReset, cSlate, nowStr, cReset)
+		fmt.Fprintf(&frame, "  %s%s\n", cGold, renderLineANSI(line1, boxWidth, 0))
+
+		line2 := fmt.Sprintf("│  %s◈ Watching :%s %s%s [%s]%s  •  %sUnpushed :%s %s%s commits%s",
+			cGold, cReset, cBold, repoRoot, branch, cReset, cGold, cReset, cAmber, unpushed, cReset)
+		fmt.Fprintf(&frame, "  %s%s\n", cGold, renderLineANSI(line2, boxWidth, 0))
+
+		line3 := fmt.Sprintf("│  %s◈ Shields  :%s %s%s Syntax Pre-flight%s  •  %s%s Entropy Shield%s  •  %s7d Velocity :%s %s",
+			cGold, cReset, cGreen, iconCheck, cReset, cGreen, iconCheck, cReset, cGold, cReset, spark)
+		fmt.Fprintf(&frame, "  %s%s\n", cGold, renderLineANSI(line3, boxWidth, 0))
+
+		fmt.Fprintf(&frame, "  %s├%s┤%s\033[K\n", cGold, strings.Repeat("─", boxWidth), cReset)
 
 		if time.Now().Before(flashUntil) && flashMsg != "" {
-			fmt.Fprintf(&frame, "  %s│%s  %s\n", cGold, cReset, flashMsg)
+			lineFlash := fmt.Sprintf("│  %s", flashMsg)
+			fmt.Fprintf(&frame, "  %s%s\n", cGold, renderLineANSI(lineFlash, boxWidth, 0))
 		} else {
-			fmt.Fprintf(&frame, "  %s│%s  %sHotkeys:%s %s[p]%s Pause  %s[s]%s Sync  %s[b]%s Pull  %s[↑/↓]%s Scroll  %s[f]%s Follow  %s[d]%s Doctor  %s[q]%s Quit\n",
-				cGold, cReset, cBold, cReset, cGold, cReset, cGold, cReset, cGold, cReset, cCyan, cReset, cCyan, cReset, cGold, cReset, cRed, cReset)
+			lineKeys := fmt.Sprintf("│  %sHotkeys:%s %s[q]%s Quit  %s[p]%s Pause  %s[s]%s Sync  %s[b]%s Pull  %s[↑/↓]%s Scroll  %s[←/→]%s Pan  %s[f]%s Tail  %s[d]%s Doctor",
+				cBold, cReset, cRed, cReset, cGold, cReset, cGold, cReset, cGold, cReset, cCyan, cReset, cCyan, cReset, cGreen, cReset, cGold, cReset)
+			fmt.Fprintf(&frame, "  %s%s\n", cGold, renderLineANSI(lineKeys, boxWidth, 0))
 		}
-		fmt.Fprintf(&frame, "  %s╰────────────────────────────────────────────────────────────────────────────────────────╯%s\n", cGold, cReset)
+		fmt.Fprintf(&frame, "  %s╰%s╯%s\033[K\n", cGold, strings.Repeat("─", boxWidth), cReset)
 
-		// 3. Scrollable Logs Viewport
-		allLogs := loadLogLines(logFile, 500)
+		// 2. Log Viewport Section
+		allLogs := loadLogLines(logFile, 1000)
 		totalLogs := len(allLogs)
 
-		// Calculate available rows for log viewport
-		renderedTopRows := strings.Count(frame.String(), "\n")
-		logRows := termRows - renderedTopRows - 2
-		if logRows < 4 {
-			logRows = 4
+		followBadge := fmt.Sprintf("%s%s TAIL: ON%s", cGreen, iconCheck, cReset)
+		if !followMode {
+			followBadge = fmt.Sprintf("%s%s SCROLLED ↑ %d (press [f] to tail)%s", cAmber, iconWarn, scrollOffset, cReset)
+		}
+		panBadge := ""
+		if horizOffset > 0 {
+			panBadge = fmt.Sprintf("  %sPan: → +%d cols (press [0] to reset)%s", cCyan, horizOffset, cReset)
+		}
+
+		fmt.Fprintf(&frame, "  %s%s%s LIVE LOG VIEWPORT%s  %s(%d lines • %s%s)%s\033[K\n",
+			cBold, cCyan, iconChevron, cReset, cSlate, totalLogs, followBadge, panBadge, cReset)
+		fmt.Fprintf(&frame, "  %s%s%s\033[K\n", cSlate, strings.Repeat("─", boxWidth), cReset)
+
+		// Exact row accounting to prevent terminal overflow & scrolling
+		headerRows := 9
+		footerRows := 1
+		logRows := termRows - headerRows - footerRows
+		if logRows < 3 {
+			logRows = 3
 		}
 
 		maxScroll := 0
@@ -1988,28 +2146,29 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 			scrollOffset = 0
 		}
 
-		followBadge := fmt.Sprintf("%s%s FOLLOW: ON%s", cGreen, iconCheck, cReset)
-		if !followMode {
-			followBadge = fmt.Sprintf("%s%s SCROLLED ↑ %d (press [f] to follow)%s", cAmber, iconWarn, scrollOffset, cReset)
-		}
-
-		fmt.Fprintf(&frame, "  %s%s%s LIVE LOG VIEWPORT%s  %s(%d lines • %s)%s\n",
-			cBold, cCyan, iconChevron, cReset, cSlate, totalLogs, followBadge, cReset)
-		fmt.Fprintf(&frame, "  %s────────────────────────────────────────────────────────────────────────────────────────%s\n", cSlate, cReset)
-
 		if totalLogs == 0 {
-			fmt.Fprintf(&frame, "    %s%s Waiting for first activity log in %s...%s\n", cSlate, iconCircle, logFile, cReset)
+			fmt.Fprintf(&frame, "    %s%s Waiting for activity logs in %s...%s\033[K\n", cSlate, iconCircle, logFile, cReset)
+			for r := 1; r < logRows; r++ {
+				fmt.Fprintf(&frame, "\033[K\n")
+			}
 		} else {
 			endIdx := totalLogs - scrollOffset
 			startIdx := endIdx - logRows
 			if startIdx < 0 {
 				startIdx = 0
 			}
+			rowsRendered := 0
 			for i := startIdx; i < endIdx && i < totalLogs; i++ {
-				fmt.Fprintf(&frame, "  %s\n", formatLogLineForTUI(allLogs[i], termCols-4))
+				fmt.Fprintf(&frame, "  %s\n", formatLogLineForTUI(allLogs[i], termCols-4, horizOffset))
+				rowsRendered++
+			}
+			for r := rowsRendered; r < logRows; r++ {
+				fmt.Fprintf(&frame, "\033[K\n")
 			}
 		}
 
+		// 3. Footer Bar
+		fmt.Fprintf(&frame, "  %s%s%s\033[0m\033[K", cSlate, "[q] Quit  [p] Pause/Resume  [s] Sync  [b] Pull  [↑/↓/k/j] Scroll  [←/→/h/l] Pan  [f] Tail  [d] Doctor", cReset)
 		frame.WriteString("\033[J")
 		fmt.Print(frame.String())
 	}
@@ -2042,6 +2201,18 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 					}
 					renderFrame()
 					continue
+				case 'C': // Arrow Right (pan right)
+					horizOffset += 10
+					renderFrame()
+					continue
+				case 'D': // Arrow Left (pan left)
+					if horizOffset >= 10 {
+						horizOffset -= 10
+					} else {
+						horizOffset = 0
+					}
+					renderFrame()
+					continue
 				case '5': // Page Up
 					scrollOffset += 10
 					followMode = false
@@ -2070,7 +2241,7 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 
 			// Single keys
 			switch keys[0] {
-			case 'q', 'Q', 3, 27: // q, Q, Ctrl+C, Esc
+			case 'q', 'Q', 3, 27: // q, Q, Ctrl+C, Esc -> INSTANT QUIT
 				return
 			case 'k', 'K': // vim scroll up
 				scrollOffset++
@@ -2084,7 +2255,20 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 					}
 				}
 				renderFrame()
-			case 'f', 'F', 'G': // follow mode
+			case 'h', 'H': // vim pan left
+				if horizOffset >= 10 {
+					horizOffset -= 10
+				} else {
+					horizOffset = 0
+				}
+				renderFrame()
+			case 'l', 'L': // vim pan right
+				horizOffset += 10
+				renderFrame()
+			case '0': // reset pan
+				horizOffset = 0
+				renderFrame()
+			case 'f', 'F': // tail / follow mode
 				scrollOffset = 0
 				followMode = true
 				renderFrame()
@@ -2092,7 +2276,11 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 				scrollOffset = 9999
 				followMode = false
 				renderFrame()
-			case 'p', 'P':
+			case 'G': // bottom
+				scrollOffset = 0
+				followMode = true
+				renderFrame()
+			case 'p', 'P': // Pause / Resume
 				pauseFile := filepath.Join(gitDir, "syncalibur.pause")
 				if _, err := os.Stat(pauseFile); err == nil {
 					_ = os.Remove(pauseFile)
@@ -2103,24 +2291,26 @@ func runInteractiveTUI(scriptPath, repoRoot string) {
 				}
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
-			case 's', 'S':
+			case 's', 'S': // Sync now
 				_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.sync"), []byte("1\n"), 0644)
 				flashMsg = fmt.Sprintf("%s%s %sSYNC NOW:%s Immediate commit & push triggered!", cCyan, iconZap, cBold, cReset)
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
-			case 'b', 'B':
+			case 'b', 'B': // Bidirectional pull
 				_ = exec.Command("bash", scriptPath, "pull").Run()
 				flashMsg = fmt.Sprintf("%s%s %sBIDIRECTIONAL PULL:%s Checked upstream & rebased cleanly.", cCyan, iconSync, cBold, cReset)
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
-			case 'u', 'U':
+			case 'u', 'U': // Self-update
 				_ = os.WriteFile(filepath.Join(gitDir, "syncalibur.upd"), []byte("1\n"), 0644)
 				flashMsg = fmt.Sprintf("%s%s %sSELF-UPDATE:%s Upstream self-update check triggered.", cGold, iconSync, cBold, cReset)
 				flashUntil = time.Now().Add(3 * time.Second)
 				renderFrame()
-			case 'd', 'D':
-				flashMsg = fmt.Sprintf("%s%s %sDOCTOR:%s Running 10-point diagnostic check...", cGreen, iconDoctor, cBold, cReset)
-				flashUntil = time.Now().Add(2 * time.Second)
+			case 'd', 'D': // Doctor
+				flashMsg = fmt.Sprintf("%s%s %sDOCTOR:%s Running 11-point diagnostic check...", cGreen, iconDoctor, cBold, cReset)
+				flashUntil = time.Now().Add(3 * time.Second)
+				renderFrame()
+			case 'r', 'R': // Redraw
 				renderFrame()
 			}
 
