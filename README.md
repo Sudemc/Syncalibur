@@ -6,13 +6,24 @@
 
 **Hybrid Go + Bash Autonomous Git Multi-Remote Sync Engine, Multi-Repo Fleet Supervisor & Live TUI Cockpit**
 
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-0ea5e9?style=for-the-badge)](#os-service-integration)
-[![Engine](https://img.shields.io/badge/Core-Go%201.23%20%2B%20Bash-00ADD8?style=for-the-badge&logo=go&logoColor=white)](#architecture)
-[![Git Remotes](https://img.shields.io/badge/Multi--Remote-GitHub%20%2B%20GitLab%20%2B%20Self--Hosted-10b981?style=for-the-badge)](#multi-remote--account-discovery)
-[![Self-Updating](https://img.shields.io/badge/Self--Updating-Auto%20Git%20Pull%20%2B%20Go%20Rebuild-a855f7?style=for-the-badge)](#autonomous-self-update-watcher)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/YusufKaya00/Syncalibur/ci.yml?branch=main&style=for-the-badge&label=CI%20Verify)](https://github.com/YusufKaya00/Syncalibur/actions)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-0ea5e9?style=for-the-badge)](#cli-command-reference)
+[![Engine](https://img.shields.io/badge/Core-Go%201.23%20%2B%20Bash-00ADD8?style=for-the-badge&logo=go&logoColor=white)](#architecture--sync-pipeline)
+[![Git Remotes](https://img.shields.io/badge/Multi--Remote-GitHub%20%2B%20GitLab%20%2B%20Self--Hosted-10b981?style=for-the-badge)](#what-is-syncalibur)
+[![PRs Welcome](https://img.shields.io/badge/PRs-Protected%20Main%20%7C%201%20Review%20Required-a855f7?style=for-the-badge)](CONTRIBUTING.md)
 
 *Forge-grade background synchronization for your repositories — powered by a compiled Go core (`syncalibur-engine`) for sub-millisecond 2×2 Subpixel TrueColor emblem rendering, Semantic Conventional Commit generation, concurrent Multi-Repo Fleet orchestration, Multi-Channel Webhooks, and an Interactive Live TUI Cockpit.*
 
+</div>
+
+---
+
+## Terminal Preview (`syncalibur status` & `syncalibur ui`)
+
+When you run `syncalibur status`, `syncalibur logs`, or `syncalibur ui`, the native Go engine renders [`assets/syncalibur-logo.png`](assets/syncalibur-logo.png) directly inside your terminal using **24-bit TrueColor ANSI escape sequences** and **2×2 Unicode Quadrant Subpixel Blocks** (`▘ ▝ ▀ ▖ ▌ ▞ ▛ ▗ ▚ ▐ ▜ ▄ ▙ ▟ █`) alongside live repository telemetry, verified accounts, and a 7-day commit velocity sparkline:
+
+<div align="center">
+  <img src="assets/syncalibur-terminal.png" alt="Syncalibur Terminal Preview" width="960" />
 </div>
 
 ---
@@ -37,70 +48,70 @@ Once installed, the global `syncalibur` command is automatically linked into `~/
 
 ---
 
-## What's New in Syncalibur v2 (Go Engine + Fleet + TUI Edition)
+## What is Syncalibur?
 
-### Domain 1 — Git Intelligence, Bidirectional Sync, Fleet & Event-Driven Watching
-1. **Compiled Go Core (`cmd/syncalibur-engine/main.go`):** Zero external Go dependencies (100% Go standard library). Automatically compiled into `bin/syncalibur-engine` on first run or after any self-update.
-2. **Semantic Conventional Commit Engine:** Instead of generic timestamps, the Go AST/diff analyzer inspects staged changes, detects common directory scopes, classifies commit types (`feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`), and appends line addition/deletion metrics:
-   - `feat(scripts): update syncalibur.sh, main.go (+142/-18)`
-   - `docs: update README.md (+85/-12)`
-   - Optional local **Ollama AI Commit Hook** (`SYNCALIBUR_AI_COMMIT="true"`) with a strict 2-second non-blocking timeout and automatic heuristic fallback.
-3. **Safe Bidirectional Sync (`--rebase --autostash`):** Periodically fetches from your primary remote (`origin`), detects when remote commits are ahead of local `HEAD`, and safely runs `git pull --rebase --autostash` when the working tree is clean. If a merge conflict is detected, Syncalibur **immediately aborts the rebase** (`git rebase --abort`), leaves your working tree untouched, and pops open a diagnostic terminal window.
-4. **Native Filesystem Event Watching (`inotifywait` / `fswatch`):** Zero-CPU event-driven watching when `inotifywait` (Linux) or `fswatch` (macOS) is installed, with automatic fallback to lightweight polling.
-5. **Multi-Repository Fleet Supervisor (`repos.list`):** Watch 5, 10, or 50 repositories simultaneously! Run `syncalibur fleet scan ~/projects` to auto-discover all Git repositories using concurrent Go goroutines and supervise them in parallel.
+### 1. Git Intelligence, Bidirectional Sync, Fleet & Event-Driven Watching
+- **Compiled Go Core (`cmd/syncalibur-engine/main.go`):** Zero external Go dependencies (100% Go standard library). Automatically compiled into `bin/syncalibur-engine` on first run or after any self-update.
+- **Semantic Conventional Commit Engine:** Instead of generic timestamps, the Go diff analyzer inspects staged changes, detects common directory scopes, classifies commit types (`feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`), and appends line addition/deletion metrics:
+  - `feat(scripts): update syncalibur.sh, main.go (+142/-18)`
+  - `docs(README): update README.md (+85/-12)`
+  - Optional local **Ollama AI Commit Hook** (`SYNCALIBUR_AI_COMMIT="true"`) with a strict 2-second non-blocking timeout and automatic heuristic fallback.
+- **Safe Bidirectional Sync (`--rebase --autostash`):** Periodically fetches from your primary remote (`origin`), detects when remote commits are ahead of local `HEAD`, and safely runs `git pull --rebase --autostash` when the working tree is clean. If a merge conflict is detected, Syncalibur **immediately aborts the rebase** (`git rebase --abort`), leaves your working tree untouched, and pops open a diagnostic terminal window.
+- **Native Filesystem Event Watching (`inotifywait` / `fswatch`):** Zero-CPU event-driven watching when `inotifywait` (Linux) or `fswatch` (macOS) is installed, with automatic fallback to lightweight polling.
+- **Multi-Repository Fleet Supervisor (`repos.list`):** Watch 5, 10, or 50 repositories simultaneously! Run `syncalibur fleet scan ~/projects` to auto-discover all Git repositories using concurrent Go goroutines and supervise them in parallel.
 
-### Domain 3 — Interactive Live TUI Cockpit, Multi-Channel Webhooks & Diagnostics
-1. **Interactive Live TUI Cockpit (`syncalibur ui`):** Full-screen, flicker-free terminal control center built in Go using raw terminal mode and alternate screen buffering. Features the 2×2 subpixel TrueColor emblem, live daemon telemetry, 7-day commit velocity sparkline (`▂█▅··▅▁`), remote matrix, live log stream, and single-keystroke hotkeys:
-   - `[p]` Pause / Resume Auto-Sync
-   - `[s]` Force Immediate Commit & Push
-   - `[b]` Force Bidirectional Pull (`--rebase`)
-   - `[u]` Check & Apply Syncalibur Self-Update
-   - `[d]` Run 10-Point System Doctor
-   - `[q]` Quit TUI cleanly
-2. **Multi-Channel Webhooks (`Discord`, `Slack`, `Telegram`, `Generic JSON`):** Configure `SYNCALIBUR_WEBHOOK_URL` (or Telegram Bot credentials) in `syncalibur.env` to receive instant rich notifications on push failures, rebase conflicts, self-updates, or every sync.
-3. **10-Point `syncalibur doctor` Diagnostic Suite:** Verifies Git identity, Go engine binary health, filesystem watcher availability, SSH connectivity (`github.com` / `gitlab.com`), `gh` / `glab` CLI authentication, OS background service registration, and remote push permissions.
-
----
-
-## Terminal Preview (`syncalibur status` & `syncalibur ui`)
-
-When you run `syncalibur status`, `syncalibur logs`, or `syncalibur ui`, the Go engine renders [`assets/syncalibur-logo.png`](assets/syncalibur-logo.png) directly inside your terminal using **24-bit TrueColor ANSI escape sequences** and **2×2 Unicode Quadrant Subpixel Blocks** (`▘ ▝ ▀ ▖ ▌ ▞ ▛ ▗ ▚ ▐ ▜ ▄ ▙ ▟ █`) alongside live repository telemetry:
-
-```text
-          ▄▄▄▄▄▄▄▄▄▄                    Syncalibur • Autonomous Git Sync Engine
-       ▄██████████████▄                 ────────────────────────────────────────────────────────
-     ▄██████████████████▄               Engine      ● ACTIVE (PID 115794) • Go Engine Accelerated
-    ██████████████████████              Service     systemd enabled (active)
-   ████████████████████████             Repository  /home/user/my-project
-  ██████████████████████████            Branch      main @ a1b2c3d
-  ██████████████████████████            Strategy    all • debounce 30s • check 3s
-  ██████████████████████████            Velocity    ▂█▅··▅▁ (7d: 220 commits • peak 85/day)
-   ████████████████████████             Self-Update enabled • branch main (every 300s)
-    ██████████████████████              Accounts    GitHub: @username • GitLab: @username
-     ▀██████████████████▀               Remotes     2 configured (push target: all)
-       ▀██████████████▀                             ├─ origin [GitHub] → username/my-project (acct: username)
-          ▀▀▀▀▀▀▀▀▀▀                                └─ gitlab [GitLab] → group/my-project (acct: username)
-```
+### 2. Interactive Live TUI Cockpit, Multi-Channel Webhooks & Diagnostics
+- **Interactive Live TUI Cockpit (`syncalibur ui`):** Full-screen, flicker-free terminal control center built in Go using raw terminal mode and alternate screen buffering. Features the 2×2 subpixel TrueColor emblem, live daemon telemetry, 7-day commit velocity sparkline (`▂█▅··▅▁`), remote matrix, live log stream, and single-keystroke hotkeys:
+  - `[p]` Pause / Resume Auto-Sync
+  - `[s]` Force Immediate Commit & Push
+  - `[b]` Force Bidirectional Pull (`--rebase`)
+  - `[u]` Check & Apply Syncalibur Self-Update
+  - `[d]` Run 10-Point System Doctor
+  - `[q]` Quit TUI cleanly
+- **Multi-Channel Webhooks (`Discord`, `Slack`, `Telegram`, `Generic JSON`):** Configure `SYNCALIBUR_WEBHOOK_URL` (or Telegram Bot credentials) in `syncalibur.env` to receive instant rich notifications on push failures, rebase conflicts, self-updates, or every sync.
+- **10-Point `syncalibur doctor` Diagnostic Suite:** Verifies Git identity, Go engine binary health, filesystem watcher availability, SSH connectivity (`github.com` / `gitlab.com`), `gh` / `glab` CLI authentication, OS background service registration, and remote push permissions.
 
 ---
 
-## Architecture
+## Architecture & Sync Pipeline
 
 ```mermaid
 flowchart TD
     A["Filesystem Change or Timer Tick"] --> B{"Event Watcher"}
-    B -->|inotifywait / fswatch| C["Debounce Window (30s)"]
-    B -->|Polling Fallback (3s)| C
+    B -->|inotifywait or fswatch| C["Debounce Window"]
+    B -->|Polling Fallback| C
     C --> D["Bidirectional Sync Check"]
     D -->|Remote Ahead| E["git pull --rebase --autostash"]
-    E -->|Conflict Detected| F["git rebase --abort + Popup Alert Terminal + Webhook"]
-    D -->|In Sync / Rebased| G["Safety Guard (<50 MiB & Secret Filter)"]
+    E -->|Conflict Detected| F["Abort Rebase + Alert Terminal + Webhook"]
+    E -->|Clean Rebase| G["Safety Guard (<50 MiB & Secret Filter)"]
+    D -->|Already In Sync| G
     G --> H["Go Engine: Semantic Commit Generator"]
-    H -->|Heuristic or Ollama AI| I["git commit -m 'feat(scope): ... (+X/-Y)'"]
+    H --> I["git commit -m 'feat(scope): update ... (+X/-Y)'"]
     I --> J{"Multi-Remote Push"}
     J -->|origin| K["GitHub"]
     J -->|gitlab| L["GitLab / Self-Hosted"]
-    K & L -->|Success / Failure| M["Go Engine: Discord / Slack / Telegram Webhook"]
+    K --> M["Discord / Slack / Telegram Webhook"]
+    L --> M
+```
+
+```text
+  ┌────────────────────────────────────────────────────────────────────────────────────────┐
+  │                       S Y N C A L I B U R   E X E C U T I O N   F L O W                │
+  └────────────────────────────────────────────────────────────────────────────────────────┘
+
+   [1] File Change Detected        ──► inotifywait / fswatch (0% CPU) or 3s Polling Fallback
+            │
+            ▼
+   [2] Bidirectional Rebase Check  ──► Fetches remote; runs 'git pull --rebase --autostash'
+            │                          (Auto-aborts & pops open Alert Terminal on conflict)
+            ▼
+   [3] Pre-Staging Safety Shield   ──► Skips files > 50 MiB & blocks .env / *.pem / *.key / *.tfstate
+            │
+            ▼
+   [4] Go Engine Semantic Commit   ──► Analyzes diff stats -> "feat(scope): update X (+42/-7)"
+            │
+            ▼
+   [5] Multi-Remote Push & Alert   ──► Pushes to GitHub + GitLab -> Dispatches Webhook / Alert Popup
 ```
 
 ---
@@ -122,7 +133,7 @@ flowchart TD
 | `syncalibur fleet start` | Spawn background Syncalibur daemons for every active repository in `repos.list` |
 | `syncalibur fleet stop` | Stop all background fleet daemons |
 | `syncalibur self-update` | Immediately check Syncalibur's own repository for updates, rebuild the Go engine, and reload |
-| `syncalibur alert-test` | Test the graphical pop-up diagnostic terminal window on your desktop environment |
+| `syncalibur alert` | Test the graphical pop-up diagnostic terminal window on your desktop environment |
 | `syncalibur uninstall` | Stop the background daemon and remove OS startup registration |
 
 ---
@@ -186,12 +197,15 @@ syncalibur fleet start
 
 ---
 
-## Safety & Self-Defense Mechanisms
+## Open-Source Governance & Pull Request Workflow
 
-1. **50 MiB File Size Guard:** Automatically skips files larger than `50 MiB` (`SYNCALIBUR_MAX_FILE_SIZE_BYTES`) so GitHub pushes never fail due to large binary blobs.
-2. **Sensitive File Filter:** Automatically blocks `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.terraform/`, `*.tfstate*`, `*.kubeconfig`, and `*.secret*` while allowing `.env.example` and `.env.template`.
-3. **Conflict-Safe Rebase Abort:** If a remote change conflicts with local edits during bidirectional sync, Syncalibur immediately aborts the rebase, pauses auto-sync, sends a webhook alert, and opens a graphical diagnostic terminal window.
-4. **Autonomous Self-Update Watcher:** Syncalibur monitors its own codebase (`~/Syncalibur`), pulls upstream improvements, recompiles `bin/syncalibur-engine` in Go, and hot-reloads the running daemon automatically.
+To protect all users running Syncalibur's autonomous self-updater, the `main` branch is protected with strict repository governance:
+- **Force Pushes & Branch Deletion Disabled:** History on `main` cannot be overwritten.
+- **Pull Request & 1 Approval Required:** Direct pushes to `main` from external contributors are blocked; all changes require a Pull Request and **at least 1 approving review** from `@YusufKaya00` (`CODEOWNERS`).
+- **Automated CI Verification (`Syncalibur CI`):** Every PR automatically runs Bash syntax verification, `ShellCheck`, `go vet`, native `go build`, engine smoke tests, and secret hygiene checks before merging is allowed.
+- **Automated PR Triage (`PR Governance & Auto-Labeler`):** Pull requests are automatically labeled by component (`go-engine`, `shell-daemon`, `documentation`, `ci-cd`) and diff size (`size/S`, `size/M`, `size/L`).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for step-by-step instructions on opening a Pull Request.
 
 ---
 
@@ -199,11 +213,19 @@ syncalibur fleet start
 
 ```text
 Syncalibur/
+├── .github/
+│   ├── CODEOWNERS                 # Auto-assigns @YusufKaya00 for mandatory PR review
+│   ├── pull_request_template.md   # Standardized PR checklist
+│   └── workflows/
+│       ├── ci.yml                 # Automated Go build, ShellCheck & smoke test CI
+│       └── pr-governance.yml      # Automatic PR component & size labeler
 ├── assets/
-│   └── syncalibur-logo.png        # Official Syncalibur Emblem (rendered in 2x2 TrueColor ANSI)
+│   ├── syncalibur-logo.png        # Official Syncalibur Emblem (rendered in 2x2 TrueColor ANSI)
+│   └── syncalibur-terminal.png    # High-DPI screenshot of `syncalibur status`
 ├── cmd/
 │   └── syncalibur-engine/
 │       └── main.go                # Go Core Engine (PNG Renderer, Semantic Commits, Fleet, Webhooks, Live TUI)
+├── CONTRIBUTING.md                # Contributor & Pull Request workflow guide
 ├── go.mod                         # Go module definition (zero external dependencies)
 ├── install.sh                     # 1-Liner public curl|bash installer
 ├── syncalibur.sh                  # Cross-platform Service Manager & Daemon Supervisor
