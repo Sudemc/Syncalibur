@@ -472,9 +472,9 @@ func exprToString(expr ast.Expr) string {
 	}
 }
 
-// parseHunkHeader extracts the enclosing function/class from unified diff header
-// e.g. @@ -12,4 +12,6 @@ def authenticate_user():
-var hunkHeaderRegex = regexp.MustCompile(`@@\s+[^@]+@@\s*(?:(?:def|function|class|async\s+def|public|private|fn|func)\s+)?([A-Za-z0-9_.:]+)`)
+// parseHunkHeader extracts the enclosing function/class/component from unified diff header
+// e.g. @@ -12,4 +12,6 @@ export const UserProfile = () => {
+var hunkHeaderRegex = regexp.MustCompile(`@@\s+[^@]+@@\s*(?:(?:def|function|class|async\s+def|public|private|protected|fn|func|const|export\s+const|export\s+function|export\s+default)\s+)?([A-Za-z0-9_.:]+)`)
 
 func detectEnclosingSymbol(repoRoot string, files []string) (string, string) {
 	if len(files) == 0 {
@@ -502,7 +502,7 @@ func detectEnclosingSymbol(repoRoot string, files []string) (string, string) {
 					}
 				}
 			}
-		} else if ext == ".py" || ext == ".ts" || ext == ".js" || ext == ".rs" || ext == ".cpp" || ext == ".java" {
+		} else if ext == ".py" || ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" || ext == ".rs" || ext == ".cpp" || ext == ".java" || ext == ".cs" || ext == ".kt" {
 			diffOut, err := exec.Command("git", "-C", repoRoot, "diff", "--cached", "-p", "--", file).Output()
 			if err == nil {
 				for _, line := range strings.Split(string(diffOut), "\n") {
