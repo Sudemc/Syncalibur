@@ -2651,7 +2651,7 @@ run_daemon() {
   fi
 
   local remote branch busy head snap id_raw git_user git_email sys_ident ssh_cred gh_user gh_via gl_user gl_via
-  local idle_snapshot="" checked_head="" push_pending=0 next_retry=0 retry_delay="${RETRY_BASE}" force_sync=0
+  local idle_snapshot="" last_hold_snapshot="" next_hold_retry=0 checked_head="" push_pending=0 next_retry=0 retry_delay="${RETRY_BASE}" force_sync=0
 
   id_raw="$(detect_user_identity)"
   IFS='|' read -r git_user git_email sys_ident ssh_cred gh_user gh_via gl_user gl_via <<< "${id_raw}"
