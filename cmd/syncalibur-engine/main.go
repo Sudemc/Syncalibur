@@ -1149,8 +1149,6 @@ func validateFileSyntax(repoRoot, relPath string) (bool, string) {
 	}
 	return true, ""
 }
-	return true, ""
-}
 
 type preflightJSONResult struct {
 	Passed      bool     `json:"passed"`
