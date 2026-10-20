@@ -984,6 +984,11 @@ func checkLexicalBalance(src []byte, ext string) (bool, string) {
 
 		if inSingleQuote {
 			if ch == '\'' {
+				// In YAML/SQL, two consecutive single quotes '' is an escaped quote inside a single-quoted scalar
+				if (ext == ".yaml" || ext == ".yml" || ext == ".sql") && i+1 < n && runes[i+1] == '\'' {
+					i++
+					continue
+				}
 				inSingleQuote = false
 			}
 			continue
@@ -1034,6 +1039,19 @@ func checkLexicalBalance(src []byte, ext string) (bool, string) {
 			continue
 		}
 		if ch == '\'' && !isRust {
+			// Contraction or apostrophe within words:
+			// e.g. Node'lar, Swap'i, Master'a, Token'i, it's, don't, can't
+			if i > 0 && (unicode.IsLetter(runes[i-1]) || unicode.IsDigit(runes[i-1])) && i+1 < n && unicode.IsLetter(runes[i+1]) {
+				continue
+			}
+			// Plural possessive or end-of-word apostrophe followed by whitespace/punctuation
+			if i > 0 && unicode.IsLetter(runes[i-1]) && i >= 2 && unicode.IsLetter(runes[i-2]) && (i+1 < n && (unicode.IsSpace(runes[i+1]) || runes[i+1] == '\n' || runes[i+1] == ',' || runes[i+1] == '.' || runes[i+1] == ':' || runes[i+1] == ';')) {
+				continue
+			}
+			// In YAML/plain text, an apostrophe attached to an identifier is not a string opener
+			if (ext == ".yaml" || ext == ".yml") && i > 0 && (unicode.IsLetter(runes[i-1]) || unicode.IsDigit(runes[i-1])) {
+				continue
+			}
 			inSingleQuote = true
 			continue
 		}
