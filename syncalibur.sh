@@ -2656,10 +2656,20 @@ cmd_doctor() {
 # Daemon Loop
 # ==============================================================================
 
+is_pid_alive() {
+  local p="$1"
+  [[ -z "${p}" || ! "${p}" =~ ^[0-9]+$ ]] && return 1
+  if [[ "${OS_KERNEL}" =~ ^(MINGW|MSYS|CYGWIN) ]]; then
+    tasklist //FI "PID eq ${p}" 2>/dev/null | grep -Fq "${p}" || kill -0 "${p}" 2>/dev/null
+  else
+    kill -0 "${p}" 2>/dev/null
+  fi
+}
+
 daemon_pid() {
   local pid
   pid="$(cat "${PID_FILE}" 2>/dev/null)" || return 1
-  [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null && echo "${pid}"
+  [[ -n "${pid}" ]] && is_pid_alive "${pid}" && echo "${pid}"
 }
 
 acquire_single_instance_lock() {
@@ -2863,18 +2873,29 @@ start_background_nohup() {
   fi
   mkdir -p "$(dirname "${LOG_FILE}")"
   ensure_go_engine || true
-  if [[ -x "${GO_ENGINE_BIN}" ]]; then
+  if [[ "${OS_KERNEL}" =~ ^(MINGW|MSYS|CYGWIN) ]]; then
+    local script_win bash_win
+    if command -v cygpath >/dev/null 2>&1; then
+      script_win="$(cygpath -w "${SCRIPT_PATH}")"
+      bash_win="$(cygpath -w "$(command -v bash)")"
+    else
+      script_win="${SCRIPT_PATH}"
+      bash_win="bash.exe"
+    fi
+    powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command \
+      "Start-Process -WindowStyle Hidden -FilePath '${bash_win}' -ArgumentList '\"${script_win}\"', 'run'" >/dev/null 2>&1
+  elif [[ -x "${GO_ENGINE_BIN}" ]]; then
     SYNCALIBUR_BACKGROUND=1 SYNCALIBUR_CONFIG="${CONFIG_FILE}" \
       nohup "${GO_ENGINE_BIN}" daemon-exec "${SCRIPT_PATH}" run </dev/null >> "${LOG_FILE}" 2>&1 &
   else
     SYNCALIBUR_BACKGROUND=1 SYNCALIBUR_CONFIG="${CONFIG_FILE}" \
       nohup bash -c 'exec -a syncalibur bash "$1" run' _ "${SCRIPT_PATH}" </dev/null >> "${LOG_FILE}" 2>&1 &
   fi
-  sleep 1
+  sleep 2
   if pid="$(daemon_pid)"; then
     echo "✓ Syncalibur started in the background (PID ${pid})."
     echo "• Follow logs : syncalibur logs"
-    echo "•  Live TUI    : syncalibur ui"
+    echo "• Live TUI    : syncalibur ui"
     return 0
   fi
   echo "✕ Failed to start. Check '${LOG_FILE}' for details." >&2
@@ -2889,12 +2910,16 @@ stop_background_pid() {
     return 0
   fi
   echo "○ Stopping Syncalibur (PID ${pid})..."
-  kill "${pid}" 2>/dev/null || true
-  for _ in 1 2 3 4 5; do
-    kill -0 "${pid}" 2>/dev/null || break
-    sleep 1
-  done
-  kill -0 "${pid}" 2>/dev/null && kill -9 "${pid}" 2>/dev/null || true
+  if [[ "${OS_KERNEL}" =~ ^(MINGW|MSYS|CYGWIN) ]]; then
+    taskkill //F //PID "${pid}" >/dev/null 2>&1 || kill -9 "${pid}" >/dev/null 2>&1 || true
+  else
+    kill "${pid}" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "${pid}" 2>/dev/null || break
+      sleep 1
+    done
+    kill -0 "${pid}" 2>/dev/null && kill -9 "${pid}" 2>/dev/null || true
+  fi
   rm -f "${PID_FILE}"
   echo "✓ Syncalibur stopped."
 }
